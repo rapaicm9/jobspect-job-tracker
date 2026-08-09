@@ -55,18 +55,19 @@ var cache = builder
 var jwtPrivateKey = builder.AddParameter("identity-jwt-private-key", secret: true);
 var jwtPublicKey = builder.AddParameter("identity-jwt-public-key", secret: true);
 
-// The web client's two secrets, declared the same way and for the same reasons.
+// The web client's one secret, declared the same way and for the same reasons.
 //
-// The session secret signs the opaque id the browser cookie carries; the tokens
-// themselves never leave this process. The encryption key is read by Next
-// itself rather than by any code here: it encrypts the values a Server Action
-// closes over, and Next mints a fresh one per build when it is unset. That is
-// invisible with a single instance and breaks the moment there are two, because
-// a client that loaded a page from one instance posts its action back to the
-// other, which cannot decrypt it. The failure surfaces mid-session as "Failed
-// to find Server Action", so the key has to be pinned before a second instance
-// exists rather than after.
-var webSessionSecret = builder.AddParameter("web-session-secret", secret: true);
+// It is read by Next itself rather than by any code here: it encrypts the values
+// a Server Action closes over, and Next mints a fresh one per build when it is
+// unset. That is invisible with a single instance and breaks the moment there
+// are two, because a client that loaded a page from one instance posts its
+// action back to the other, which cannot decrypt it. The failure surfaces
+// mid-session as "Failed to find Server Action", so the key has to be pinned
+// before a second instance exists rather than after.
+//
+// There is deliberately no session secret beside it. The browser cookie carries
+// an opaque random id and nothing else - the session itself lives in Redis, so
+// there is no payload to sign and no signature for anything to verify.
 var webServerActionsKey = builder.AddParameter("web-server-actions-encryption-key", secret: true);
 
 // Schema first. A one-shot that applies every module's migrations and exits;
@@ -112,24 +113,39 @@ builder.AddProject<Projects.Jobspect_Worker>("worker")
 // The API address is passed as an explicit endpoint rather than through
 // WithReference: the reference renders as https://api:${API_PORT} in the
 // published topology, where the API serves plain HTTP and every call would
-// fail TLS. Redis arrives by reference, which is already the URL form ioredis
-// takes.
+// fail TLS. Redis still arrives by reference, but the value needs translating
+// on the far side: the connection string is StackExchange.Redis form, and
+// ioredis takes a redis:// URL or an options object and refuses a bare
+// host:port string.
 // pnpm named explicitly: the default is npm, which cannot read this project's
 // lockfile and fails the install outright. --frozen-lockfile makes the install
 // reproducible - it refuses to silently re-resolve the dependency graph when
 // the lockfile and the manifest disagree, which is the same guarantee the
 // backend gets from pinning every package version centrally.
 #pragma warning disable ASPIREJAVASCRIPT001 // AddNextJsApp is still experimental.
-builder.AddNextJsApp("web", "../src/Jobspect.Web")
+var web = builder.AddNextJsApp("web", "../src/Jobspect.Web")
     .WithPnpm(installArgs: ["--frozen-lockfile"])
     .WithHttpEndpoint(port: 3000, env: "PORT")
     .WithExternalHttpEndpoints()
     .WithEnvironment("JOBSPECT_API_BASE_URL", api.GetEndpoint("http"))
-    .WithEnvironment("SESSION_SECRET", webSessionSecret)
     .WithEnvironment("NEXT_SERVER_ACTIONS_ENCRYPTION_KEY", webServerActionsKey)
     .WithReference(cache)
     .WithHttpHealthCheck("/health/ready")
-    .WaitFor(api);
+    .WaitFor(api)
+    // The readiness probe pings Redis, so starting before it is up means
+    // starting unhealthy and waiting to be noticed.
+    .WaitFor(cache);
+
+// Locally the Redis container serves TLS with a certificate Aspire signs and
+// installs into the machine's trust store, which is why the .NET hosts connect
+// without noticing. Node keeps its own bundled CA list and rejects it as
+// self-signed, so it has to be told to read the store the certificate is
+// actually in. Run mode only: the published topology runs Redis without TLS, and
+// a flag that outlives its reason is worse than one that is scoped to it.
+if (builder.ExecutionContext.IsRunMode)
+{
+    web.WithEnvironment("NODE_OPTIONS", "--use-system-ca");
+}
 #pragma warning restore ASPIREJAVASCRIPT001
 
 builder.Build().Run();
