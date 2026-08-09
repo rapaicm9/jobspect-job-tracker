@@ -109,6 +109,13 @@ jobs:
       - name: Check licences
         run: pnpm licences
 
+      - name: Check the contract types
+        # The frontend half of the contract gate: the backend fails when the
+        # committed document drifts from the running host, this fails when the
+        # committed types drift from the document. Without it a backend PR can
+        # move openapi.yaml out from under these types unnoticed.
+        run: pnpm api:check
+
       - name: Restore the Next build cache
         uses: actions/cache@v6
         with:

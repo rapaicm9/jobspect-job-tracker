@@ -11,7 +11,9 @@
     "test:e2e": "playwright test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "licences": "node scripts/check-licences.mjs"
+    "licences": "node scripts/check-licences.mjs",
+    "api:generate": "openapi-typescript ../../docs/openapi/openapi.yaml -o src/server/api/schema.d.ts",
+    "api:check": "pnpm api:generate && git diff --exit-code src/server/api/schema.d.ts"
   },
   "engines": {
     "node": ">=24"
@@ -22,6 +24,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.30.0",
     "next": "16.3.0",
+    "openapi-fetch": "^0.17.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwind-merge": "^3.6.0"
@@ -36,6 +39,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "eslint-plugin-boundaries": "^7.1.0",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.6",
     "shadcn": "^4.16.2",
     "tailwindcss": "^4",
