@@ -1,3 +1,6 @@
 allowBuilds:
+  # msw's install script only writes the browser service worker into public/.
+  # Mocking happens in Node here, so there is nothing for it to do.
+  msw: false
   sharp: false
   unrs-resolver: false

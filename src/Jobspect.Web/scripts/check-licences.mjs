@@ -11,6 +11,8 @@ const ALLOWED = new Set([
   "CC0-1.0",
   "ISC",
   "MIT",
+  // MIT without the attribution clause, so strictly more permissive than MIT.
+  "MIT-0",
   "Unlicense",
   // Geist is vendored as a .woff2 with its OFL text beside it, so pnpm never
   // sees it. Listed so that packaging the typeface later is not a gate failure.
@@ -72,12 +74,38 @@ function readLicences() {
   }
 }
 
+/**
+ * Resolves an SPDX expression, not just a bare identifier. `(MIT OR CC0-1.0)`
+ * is a choice, so one permissive alternative is enough; `A AND B` imposes both,
+ * so every part has to clear on its own. That keeps sharp's
+ * `Apache-2.0 AND LGPL-3.0-or-later` an exception rather than letting the
+ * Apache half wave the LGPL half through.
+ */
+function isPermissive(expression) {
+  const spdx = expression
+    .trim()
+    .replace(/^\((.*)\)$/, "$1")
+    .trim();
+
+  if (ALLOWED.has(spdx)) return true;
+
+  if (/ OR /i.test(spdx)) {
+    return spdx.split(/ OR /i).some(isPermissive);
+  }
+
+  if (/ AND /i.test(spdx)) {
+    return spdx.split(/ AND /i).every(isPermissive);
+  }
+
+  return false;
+}
+
 const report = readLicences();
 const violations = [];
 const excepted = [];
 
 for (const [licence, packages] of Object.entries(report)) {
-  if (ALLOWED.has(licence)) continue;
+  if (isPermissive(licence)) continue;
 
   for (const pkg of packages) {
     const exception = EXCEPTIONS.find((candidate) => candidate.match.test(pkg.name));

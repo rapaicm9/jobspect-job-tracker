@@ -269,7 +269,7 @@ function retryAfterSeconds(headers: Headers): number | null {
  */
 export function classify(
   status: number,
-  body: ProblemBody | null,
+  body: ProblemBody | ValidationProblemBody | null,
   headers: Headers = new Headers(),
 ): ApiFailure {
   if (status === 401 && (body === null || body.code === undefined)) {

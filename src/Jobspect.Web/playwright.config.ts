@@ -29,7 +29,10 @@ export default defineConfig({
     command: "pnpm build && pnpm start",
     url: baseURL,
     reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    // Covers a fully cold production build, which is what a CI run gets the
+    // first time - and any time the .next/cache key misses. A warm build serves
+    // in about 30s, so this ceiling only ever costs time on a real failure.
+    timeout: 300_000,
     env: { PORT: String(PORT) },
   },
 });

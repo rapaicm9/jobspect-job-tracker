@@ -109,6 +109,12 @@ jobs:
       - name: Check licences
         run: pnpm licences
 
+      - name: Unit tests
+        # Vitest over anything callable as a plain function. Anything needing a
+        # browser, a cookie or an async Server Component belongs in the
+        # Playwright run below, which is a boundary rather than a gap.
+        run: pnpm test
+
       - name: Check the contract types
         # The frontend half of the contract gate: the backend fails when the
         # committed document drifts from the running host, this fails when the
