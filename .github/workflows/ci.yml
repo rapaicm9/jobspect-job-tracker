@@ -15,8 +15,8 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# The three jobs below have no `needs:` between them, so they start together and
-# the PR waits for the slowest rather than the sum. Deliberately no `paths:`
+# The two jobs below have no `needs:` between them, so they start together and
+# the PR waits for the slower rather than the sum. Deliberately no `paths:`
 # filters: a workflow skipped by a path filter leaves its check pending forever
 # rather than reporting success, which is what blocks a merge the day one of
 # these becomes a required check.
@@ -56,10 +56,15 @@ jobs:
         # failing test fails the gate; coverage is information, never a gate.
         run: dotnet test --no-build --no-restore --configuration Release
 
-  web-fast:
-    name: web-fast
+  # One job rather than a fast and a slow lane. Separate jobs get separate
+  # runners, so a split would install twice to buy nothing: the backend is the
+  # critical path, so the PR turns green at the same moment either way. Ordering
+  # the checks cheapest-first keeps the fast feedback - a lint failure aborts
+  # before the build and the browser download.
+  web:
+    name: web
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     defaults:
       run:
@@ -103,35 +108,6 @@ jobs:
 
       - name: Check licences
         run: pnpm licences
-
-  web-slow:
-    name: web-slow
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    defaults:
-      run:
-        working-directory: src/Jobspect.Web
-
-    steps:
-      - name: Check out
-        uses: actions/checkout@v7
-
-      - name: Read the pinned Node version
-        id: node
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
-
-      - name: Set up pnpm and Node
-        uses: pnpm/setup@v2
-        with:
-          package-json-file: src/Jobspect.Web/package.json
-          runtime: node@${{ steps.node.outputs.version }}
-          cache-dependency-path: src/Jobspect.Web/pnpm-lock.yaml
-          cache: true
-          install: false
-
-      - name: Install
-        run: pnpm install --frozen-lockfile
 
       - name: Restore the Next build cache
         uses: actions/cache@v6
