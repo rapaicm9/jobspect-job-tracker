@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
   // an unset GIT_SHA cannot pin every build to the same id.
   generateBuildId: () => process.env.GIT_SHA ?? null,
   deploymentId: process.env.DEPLOYMENT_VERSION,
+
+  // ioredis reaches for Node built-ins and resolves several of its dependencies
+  // at runtime, which is what this option exists for. Next ships a list of
+  // packages it opts out automatically and ioredis is not on it.
+  serverExternalPackages: ["ioredis"],
 };
 
 export default nextConfig;
