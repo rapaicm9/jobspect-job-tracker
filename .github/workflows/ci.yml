@@ -15,6 +15,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The two jobs below have no `needs:` between them, so they start together and
+# the PR waits for the slower rather than the sum. Deliberately no `paths:`
+# filters: a workflow skipped by a path filter leaves its check pending forever
+# rather than reporting success, which is what blocks a merge the day one of
+# these becomes a required check.
 jobs:
   build:
     name: build
@@ -23,10 +28,10 @@ jobs:
 
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           # Reads the pinned SDK band from global.json rather than restating it
           # here, so CI and a developer machine resolve the same analyzers.
@@ -50,3 +55,82 @@ jobs:
         # ubuntu-latest ships preinstalled - no extra runner setup needed. A
         # failing test fails the gate; coverage is information, never a gate.
         run: dotnet test --no-build --no-restore --configuration Release
+
+  # One job rather than a fast and a slow lane. Separate jobs get separate
+  # runners, so a split would install twice to buy nothing: the backend is the
+  # critical path, so the PR turns green at the same moment either way. Ordering
+  # the checks cheapest-first keeps the fast feedback - a lint failure aborts
+  # before the build and the browser download.
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: src/Jobspect.Web
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Read the pinned Node version
+        id: node
+        # Sourced from .nvmrc so the version lives in one place and a local
+        # `nvm use` cannot drift from what CI runs.
+        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v2
+        with:
+          # pnpm's own version comes from the packageManager field.
+          package-json-file: src/Jobspect.Web/package.json
+          runtime: node@${{ steps.node.outputs.version }}
+          cache-dependency-path: src/Jobspect.Web/pnpm-lock.yaml
+          cache: true
+          # This action installs at the repository root, which is not where the
+          # package lives.
+          install: false
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        # Carries the five architectural boundary rules, so a cross-feature
+        # import or a server module missing `server-only` fails here.
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Check licences
+        run: pnpm licences
+
+      - name: Restore the Next build cache
+        uses: actions/cache@v6
+        with:
+          path: src/Jobspect.Web/.next/cache
+          key: next-${{ hashFiles('src/Jobspect.Web/pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            next-${{ hashFiles('src/Jobspect.Web/pnpm-lock.yaml') }}-
+
+      - name: Restore the Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('src/Jobspect.Web/pnpm-lock.yaml') }}
+
+      - name: Install the Playwright browser
+        # Both projects are Desktop Chrome, one light and one dark, so chromium
+        # is the only download. --with-deps still runs because the apt packages
+        # it installs live outside the cached directory.
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build and test
+        # playwright.config.ts builds and serves the standalone output itself,
+        # so this one command covers the production build, the axe sweep and the
+        # token contrast assertions without booting a second browser.
+        run: pnpm test:e2e
