@@ -1,6 +1,6 @@
 import "server-only";
 
-import createClient, { type Middleware } from "openapi-fetch";
+import createClient, { type Client, type Middleware } from "openapi-fetch";
 
 import { classify, type ApiFailure, type ProblemBody } from "./errors";
 import type { paths } from "./schema";
@@ -10,12 +10,16 @@ import type { paths } from "./schema";
  * certificate store, so the dev certificate fails here even where it is trusted
  * for a browser, and the deployed topology terminates TLS at the proxy.
  */
-const baseUrl = process.env.JOBSPECT_API_BASE_URL;
+export function requireBaseUrl(): string {
+  const baseUrl = process.env.JOBSPECT_API_BASE_URL;
 
-if (!baseUrl) {
-  throw new Error(
-    "JOBSPECT_API_BASE_URL is not set. The AppHost supplies it; a bare `next dev` will not.",
-  );
+  if (!baseUrl) {
+    throw new Error(
+      "JOBSPECT_API_BASE_URL is not set. The AppHost supplies it; a bare `next dev` will not.",
+    );
+  }
+
+  return baseUrl;
 }
 
 /** Nothing should take this long. Past it the user is staring at a spinner. */
@@ -34,9 +38,33 @@ export function setAccessTokenProvider(provider: AccessTokenProvider): void {
   provideAccessToken = provider;
 }
 
+/**
+ * The endpoints that take no bearer. Skipping them is not tidiness: the refresh
+ * call is made *by* the access-token provider, so sending it through the
+ * provider again is unbounded recursion. Naming the paths breaks that at the
+ * one place it can be seen, and stops a stale token being offered to login.
+ */
+const ANONYMOUS_PATHS: ReadonlySet<string> = new Set([
+  "/api/v1/identity/register",
+  "/api/v1/identity/login",
+  "/api/v1/identity/refresh",
+  // Logout identifies the session by the refresh token in its body, so it needs
+  // no bearer. Attaching one would make signing out on an aged token rotate the
+  // pair first - a round trip to obtain a credential we are about to discard,
+  // taken on the one code path where the family is most likely to be raced.
+  "/api/v1/identity/logout",
+]);
+
 /** Attach credentials. */
 const auth: Middleware = {
-  async onRequest({ request }) {
+  async onRequest({ request, schemaPath }) {
+    if (ANONYMOUS_PATHS.has(schemaPath)) return request;
+
+    // A caller that has already put a token on the request knows something this
+    // middleware does not - it is how a retry carries the token from a refresh
+    // that has just completed, rather than racing a memo it cannot invalidate.
+    if (request.headers.has("Authorization")) return request;
+
     const token = await provideAccessToken();
     if (token !== null) {
       request.headers.set("Authorization", `Bearer ${token}`);
@@ -122,19 +150,39 @@ const errors: Middleware = {
   },
 };
 
-export const api = createClient<paths>({
-  baseUrl,
-  // Resolve `fetch` per call rather than letting the client capture it at
-  // construction. This module is imported long before anything that wraps the
-  // global - Next's own instrumentation, MSW in the test suite - and a captured
-  // reference silently bypasses all of it.
-  fetch: (request) => globalThis.fetch(request),
-});
+let client: Client<paths> | undefined;
 
-// Order matters on the way out: the budget wraps the Request first so the auth
-// header lands on the object that actually gets sent, and telemetry sees the
-// request last, closest to the wire.
-api.use(budget, auth, telemetry, errors);
+function build(): Client<paths> {
+  const created = createClient<paths>({
+    baseUrl: requireBaseUrl(),
+    // Resolve `fetch` per call rather than letting the client capture it at
+    // construction. This module is imported long before anything that wraps the
+    // global - Next's own instrumentation, MSW in the test suite - and a captured
+    // reference silently bypasses all of it.
+    fetch: (request) => globalThis.fetch(request),
+  });
+
+  // Order matters on the way out: the budget wraps the Request first so the auth
+  // header lands on the object that actually gets sent, and telemetry sees the
+  // request last, closest to the wire.
+  created.use(budget, auth, telemetry, errors);
+
+  return created;
+}
+
+/**
+ * Built on first use rather than on import.
+ *
+ * The base URL is deployment configuration, and reading it at module scope made
+ * this module unimportable without it - which `next build` hits while collecting
+ * page data, so the application could not be built without the runtime
+ * environment it was going to be run in. The check has not been softened, only
+ * moved: `instrumentation.ts` still makes a missing value fail the server at
+ * startup, so nothing reaches a user before it is noticed.
+ */
+export const api: Client<paths> = new Proxy({} as Client<paths>, {
+  get: (_target, property, receiver) => Reflect.get((client ??= build()), property, receiver),
+});
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; failure: ApiFailure };
 

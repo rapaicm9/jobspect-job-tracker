@@ -20,6 +20,15 @@ const nextConfig: NextConfig = {
   // at runtime, which is what this option exists for. Next ships a list of
   // packages it opts out automatically and ioredis is not on it.
   serverExternalPackages: ["ioredis"],
+
+  experimental: {
+    // Turns "a token reached a Client Component" from a silent leak into a
+    // refused render. The lint rule requiring `server-only` already stops a
+    // server module being imported into the browser; this catches the other
+    // direction, where a server module hands a credential across the boundary
+    // as an ordinary prop.
+    taint: true,
+  },
 };
 
 export default nextConfig;

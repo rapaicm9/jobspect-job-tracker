@@ -22,6 +22,12 @@ export interface RedisCommands {
   srem(key: string, member: string): Promise<number>;
   smembers(key: string): Promise<string[]>;
   pexpire(key: string, ttlMs: number): Promise<number>;
+  /**
+   * Releasing a lock only if we still hold it. Fixed at one key and one
+   * argument, which is the only script this service runs - a variadic signature
+   * would describe commands nobody issues and leave the fake guessing.
+   */
+  eval(script: string, numKeys: 1, key: string, argument: string): Promise<unknown>;
   ping(): Promise<string>;
 }
 

@@ -33,6 +33,14 @@ export default defineConfig({
     // first time - and any time the .next/cache key misses. A warm build serves
     // in about 30s, so this ceiling only ever costs time on a real failure.
     timeout: 300_000,
-    env: { PORT: String(PORT) },
+    env: {
+      PORT: String(PORT),
+      // The instrumentation hook registers the access-token provider at startup,
+      // which pulls in the API client, which refuses to load without this. A
+      // deployment always has one; the suite has to supply it too. Unreachable
+      // on purpose - nothing here calls the API, and a value that resolves would
+      // hide a test that started to.
+      JOBSPECT_API_BASE_URL: "http://api.test",
+    },
   },
 });

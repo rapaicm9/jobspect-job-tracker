@@ -1,4 +1,5 @@
 import type { RedisCommands } from "@/server/redis";
+import { RELEASE_LOCK_SCRIPT } from "@/server/session/refresh";
 
 /**
  * Enough Redis to run the session store: strings with a TTL, sets with a TTL,
@@ -87,6 +88,20 @@ export function createFakeRedis(now: () => Date = () => new Date()): FakeRedis {
       if (entry === undefined) return 0;
 
       entry.expiresAt = now().getTime() + ttlMs;
+      return 1;
+    },
+
+    async eval(script, _numKeys, key, argument) {
+      // Matched by identity, not interpreted. This is not a Lua engine, and the
+      // one script the service runs is exported so the match can be exact -
+      // a rewritten script fails here rather than quietly doing nothing.
+      if (script !== RELEASE_LOCK_SCRIPT) {
+        throw new Error("The fake knows only the lock-release script.");
+      }
+
+      if (live(strings, key)?.value !== argument) return 0;
+
+      strings.delete(key);
       return 1;
     },
 

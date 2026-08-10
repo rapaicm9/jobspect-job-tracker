@@ -43,7 +43,7 @@ const USER_INDEX_PREFIX = "web:sess:user:";
  * holds hashes for the same reason, which also means a logout-all can build the
  * session keys directly without reading anything back.
  */
-function hashSid(sid: string): string {
+export function hashSid(sid: string): string {
   return createHash("sha256").update(sid).digest("hex");
 }
 
