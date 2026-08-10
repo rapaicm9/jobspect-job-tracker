@@ -149,6 +149,13 @@ internal sealed class ApplicationsDbContext(DbContextOptions<ApplicationsDbConte
             // so plain "this user's applications" is served too.
             application.HasIndex(a => new { a.OwnerId, a.AppliedDate, a.Id });
 
+            // The other order the list offers. Ascending is the one worth serving -
+            // "what is due next" - and Postgres sorts nulls last for ASC, which is
+            // where applications without a deadline belong. Descending is not fully
+            // served by this: keeping nulls last when the dates reverse needs an
+            // IS NULL key in front, which no single-column ordering matches.
+            application.HasIndex(a => new { a.OwnerId, a.ApplicationDeadline, a.Id });
+
             // Support the foreign keys and the "applications in this campaign / at
             // this company" reads that follow them.
             application.HasIndex(a => a.CampaignId);

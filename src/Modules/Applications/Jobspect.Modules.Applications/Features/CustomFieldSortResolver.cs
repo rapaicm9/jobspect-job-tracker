@@ -8,7 +8,16 @@ using Microsoft.EntityFrameworkCore;
 namespace Jobspect.Modules.Applications.Features;
 
 /// <summary>Which custom field a list is ordered by, and which way.</summary>
-internal sealed record CustomFieldSort(Guid FieldId, bool Descending);
+internal sealed record CustomFieldSort(Guid FieldId, bool Descending)
+{
+    /// <summary>
+    /// This sort's identity inside a cursor. The field id belongs in it as much as
+    /// the direction does: two text fields render answers the same way, so a cursor
+    /// carrying only the answer positions plausibly in a sort by the other field and
+    /// walks the wrong rows.
+    /// </summary>
+    public string Tag => $"cf:{FieldId:D}:{(Descending ? "desc" : "asc")}";
+}
 
 /// <summary>
 /// How to order by one custom field: the SQL to sort on, and how to render an

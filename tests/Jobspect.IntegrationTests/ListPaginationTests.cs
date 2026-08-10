@@ -216,14 +216,19 @@ public sealed class ListPaginationTests(ApiFixture fixture)
         await CreateContactAsync(tokens.AccessToken, appId, "Alex Kim");
         await CreateContactAsync(tokens.AccessToken, appId, "Bo Lee");
 
-        // A contacts cursor carries a name where the applications list expects a date.
+        // A contacts cursor carries a name where the applications list expects a
+        // date, and it names no sort of this list's at all.
         var contacts = await (await _client.ListContactsAsync(tokens.AccessToken, limit: 1))
             .ReadPageAsync<ContactView>();
         contacts.NextCursor.ShouldNotBeNull();
 
         var response = await _client.ListApplicationsAsync(tokens.AccessToken, cursor: contacts.NextCursor);
 
-        await response.ShouldBeValidationProblemAsync("cursor");
+        // Reported as a sort it does not recognise rather than as a malformed value:
+        // the cursor decodes perfectly, it just positions nothing here. A client
+        // recovers from that by starting the walk again, which is what the code says
+        // and a field-keyed error would not.
+        await response.ShouldBeProblemAsync(422, "cursor.sort_mismatch");
     }
 
     [Fact]

@@ -458,12 +458,22 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: stage
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
         - name: customFieldId
           in: query
           schema:
             type: string
             format: uuid
         - name: customFieldValue
+          in: query
+          schema:
+            type: string
+        - name: sortBy
           in: query
           schema:
             type: string
@@ -2503,9 +2513,13 @@ components:
         - id
         - campaignId
         - companyId
+        - companyName
         - stage
         - role
+        - compensation
+        - location
         - workMode
+        - source
         - appliedDate
         - applicationDeadline
         - createdAt
@@ -2523,14 +2537,30 @@ components:
             - 'null'
             - string
           format: uuid
+        companyName:
+          type:
+            - 'null'
+            - string
         stage:
           $ref: '#/components/schemas/Stage'
         role:
           type: string
+        compensation:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/MoneyResponse'
+        location:
+          type:
+            - 'null'
+            - string
         workMode:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/WorkMode'
+        source:
+          type:
+            - 'null'
+            - string
         appliedDate:
           type: string
           format: date

@@ -65,4 +65,27 @@ internal static class ApplicationErrors
     public static readonly Error OfferDeadlineRequiresOffer = Error.Validation(
         "application.offer_deadline_requires_offer",
         "An offer-decision deadline can only be set or changed while the application is at the Offer stage.");
+
+    /// <summary>
+    /// The cursor decodes, but it was issued under a different ordering - another
+    /// column, the other direction, or a different custom field. Refused rather
+    /// than restarted from the top, which would let a client page the same rows
+    /// forever without noticing.
+    /// <para>
+    /// Lives here rather than with the custom-field errors because every sort this
+    /// list offers can raise it, and the alternative to raising it is a page that
+    /// looks correct and silently repeats or drops rows.
+    /// </para>
+    /// </summary>
+    public static readonly Error SortCursorMismatch = Error.Validation(
+        "cursor.sort_mismatch",
+        "The cursor was issued for a different sort. Use the nextCursor returned by a previous page.");
+
+    /// <summary>
+    /// A <c>stage</c> query value that is not one of the pipeline's stages. Named
+    /// rather than ignored: a list quietly returning everything when it was asked
+    /// to narrow is a bug found late.
+    /// </summary>
+    public static string UnknownStage(string value) =>
+        $"'{value}' is not a stage. Use one of: {string.Join(", ", Enum.GetNames<Stage>())}.";
 }
