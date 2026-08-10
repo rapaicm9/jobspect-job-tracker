@@ -44,6 +44,24 @@ export interface Account {
 }
 
 /**
+ * Why there is no session, not just that there is none.
+ *
+ * The three absent states are told apart because the login page says something
+ * different for each, and one of them is worth saying loudly: a revoked family
+ * means a retired refresh token was replayed, and the account was signed out
+ * everywhere on purpose. Reporting that as "your session expired" would hide the
+ * one event a user would want to know about.
+ */
+export type SessionState =
+  | { status: "active"; session: Session }
+  | { status: "anonymous" }
+  | { status: "expired" }
+  | { status: "revoked" };
+
+/** The query the login page reads to explain itself. */
+export type SessionEndedReason = "expired" | "revoked";
+
+/**
  * A second layer under the `server-only` lint rule, working in the opposite
  * direction: that rule stops a server module reaching the browser, this stops a
  * server module handing a credential across the boundary as an ordinary prop.
@@ -75,9 +93,9 @@ function protect(session: Session): Session {
  * never reach the lock. The lock is what covers everything the memo cannot see -
  * two tabs, a prefetch racing a navigation, a Server Action firing mid-render.
  */
-export const verifySession = cache(async (): Promise<Session | null> => {
+export const verifySession = cache(async (): Promise<SessionState> => {
   const sid = await readSessionCookie();
-  if (sid === null) return null;
+  if (sid === null) return { status: "anonymous" };
 
   let outcome;
   try {
@@ -86,29 +104,32 @@ export const verifySession = cache(async (): Promise<Session | null> => {
     // Redis is unreachable, so there is no way to tell whose request this is.
     // Absent a session, the caller sends the user to log in - which is the right
     // answer, because a process that cannot read Redis cannot serve them either.
-    return null;
+    return { status: "anonymous" };
   }
 
   switch (outcome.kind) {
     case "fresh":
     case "refreshed":
-      return protect({
-        sid,
-        userId: outcome.tokens.userId,
-        accessToken: outcome.tokens.accessToken,
-      });
+      return {
+        status: "active",
+        session: protect({
+          sid,
+          userId: outcome.tokens.userId,
+          accessToken: outcome.tokens.accessToken,
+        }),
+      };
 
     case "no-session":
-      return null;
+      // A cookie pointing at nothing: the record aged out, or a logout on another
+      // request removed it. Either way the user was signed in once, so this is an
+      // expiry rather than an anonymous visit.
+      return { status: "expired" };
 
     case "destroyed":
       // The refresher has already deleted the record. The cookie still points at
       // it and cannot be cleared from a render, so it is dropped on the next
       // Server Action; until then it resolves to nothing, which is harmless.
-      console.warn(
-        `Session destroyed during refresh (family revoked: ${String(outcome.familyRevoked)}).`,
-      );
-      return null;
+      return { status: outcome.familyRevoked ? "revoked" : "expired" };
 
     case "unavailable":
       // Not a logout. An API outage must not sign the userbase out, least of all
@@ -117,17 +138,22 @@ export const verifySession = cache(async (): Promise<Session | null> => {
   }
 });
 
+/** The active session, or the login page with a reason it can explain. */
 export async function requireSession(): Promise<Session> {
-  const session = await verifySession();
-  if (session === null) redirect("/login");
-  return session;
+  const state = await verifySession();
+  if (state.status === "active") return state.session;
+
+  // `redirect` throws, so nothing below runs for the other three.
+  redirect(state.status === "anonymous" ? "/login" : `/login?reason=${state.status}`);
 }
 
 export const getAccount = cache(async (): Promise<Account | null> => {
-  const session = await verifySession();
-  if (session === null) return null;
+  const state = await verifySession();
+  if (state.status !== "active") return null;
 
-  const result = await callAuthenticated(session.sid, (init) => api.GET("/api/v1/account", init));
+  const result = await callAuthenticated(state.session.sid, (init) =>
+    api.GET("/api/v1/account", init),
+  );
   if (!result.ok) throw new UpstreamError(result.failure.kind);
 
   return {

@@ -3,7 +3,10 @@ import { expect, test } from "@playwright/test";
 // Everything here runs against a production build, which is the point: the
 // policy the suite asserts is the strict one, without the two directives
 // development relaxes.
-const ROUTES = ["/"];
+// The forms are the first interactive client components in the product, which
+// makes them the first real test of the policy: "a login form that will not
+// submit" is precisely the failure this branch landed early to avoid.
+const ROUTES = ["/", "/login", "/register"];
 
 const SESSION_COOKIE = "__Host-jobspect.sid";
 
@@ -127,5 +130,26 @@ test.describe("the session cookie", () => {
       .map((header) => header.value);
 
     expect(names.filter((value) => value.startsWith(SESSION_COOKIE))).toEqual([]);
+  });
+});
+
+test.describe("a route that means nothing without an account", () => {
+  test("sends a visitor with no cookie to sign in", async ({ page }) => {
+    await page.goto("/applications");
+
+    await expect(page).toHaveURL(/\/login$/);
+  });
+
+  test("fails closed when the session store cannot be reached", async ({ request }) => {
+    // A cookie gets past the proxy, which holds no signature and reads no Redis.
+    // The page then asks the DAL, and the DAL cannot reach Redis here - no
+    // session store runs in this suite. Landing on the login page is the whole
+    // point: a process that cannot read a session must refuse to serve one
+    // rather than render as though there were none.
+    const response = await request.get("/applications", {
+      headers: { Cookie: `${SESSION_COOKIE}=not-a-real-session` },
+    });
+
+    expect(new URL(response.url()).pathname).toBe("/login");
   });
 });
