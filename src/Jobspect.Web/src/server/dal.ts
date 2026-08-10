@@ -1,7 +1,13 @@
+// The taint APIs are declared in React's experimental types, which tsconfig does
+// not pull in by default. A reference directive rather than an import: that
+// module has types but no runtime, so importing it typechecks and then fails the
+// bundler. Directives have to precede every statement, which is why this sits
+// above `server-only`.
+/// <reference types="react/experimental" />
 import "server-only";
 
 import { redirect } from "next/navigation";
-import { cache } from "react";
+import { cache, experimental_taintUniqueValue } from "react";
 
 import { api } from "@/server/api/client";
 import type { ApiFailure } from "@/server/api/errors";
@@ -38,6 +44,32 @@ export interface Account {
 }
 
 /**
+ * A second layer under the `server-only` lint rule, working in the opposite
+ * direction: that rule stops a server module reaching the browser, this stops a
+ * server module handing a credential across the boundary as an ordinary prop.
+ * Either value is enough to act as the user, and both are one careless prop away
+ * from the client.
+ *
+ * `userId` is deliberately left alone - it is an opaque identifier the API
+ * already treats as safe to expose, and tainting it would make rendering the
+ * account impossible.
+ */
+function protect(session: Session): Session {
+  experimental_taintUniqueValue(
+    "Do not pass the access token to the client. Call the API from a Server Component or a Server Action instead.",
+    session,
+    session.accessToken,
+  );
+  experimental_taintUniqueValue(
+    "Do not pass the session id to the client. It is the cookie's value, and anything holding it is the session.",
+    session,
+    session.sid,
+  );
+
+  return session;
+}
+
+/**
  * Memoised for the render pass, which is the cheap half of the single-flight:
  * four Server Components sharing one page share one already-fresh token and
  * never reach the lock. The lock is what covers everything the memo cannot see -
@@ -60,7 +92,11 @@ export const verifySession = cache(async (): Promise<Session | null> => {
   switch (outcome.kind) {
     case "fresh":
     case "refreshed":
-      return { sid, userId: outcome.tokens.userId, accessToken: outcome.tokens.accessToken };
+      return protect({
+        sid,
+        userId: outcome.tokens.userId,
+        accessToken: outcome.tokens.accessToken,
+      });
 
     case "no-session":
       return null;
