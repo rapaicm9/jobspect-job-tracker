@@ -34,9 +34,28 @@ export function setAccessTokenProvider(provider: AccessTokenProvider): void {
   provideAccessToken = provider;
 }
 
+/**
+ * The endpoints that take no bearer. Skipping them is not tidiness: the refresh
+ * call is made *by* the access-token provider, so sending it through the
+ * provider again is unbounded recursion. Naming the paths breaks that at the
+ * one place it can be seen, and stops a stale token being offered to login.
+ */
+const ANONYMOUS_PATHS: ReadonlySet<string> = new Set([
+  "/api/v1/identity/register",
+  "/api/v1/identity/login",
+  "/api/v1/identity/refresh",
+]);
+
 /** Attach credentials. */
 const auth: Middleware = {
-  async onRequest({ request }) {
+  async onRequest({ request, schemaPath }) {
+    if (ANONYMOUS_PATHS.has(schemaPath)) return request;
+
+    // A caller that has already put a token on the request knows something this
+    // middleware does not - it is how a retry carries the token from a refresh
+    // that has just completed, rather than racing a memo it cannot invalidate.
+    if (request.headers.has("Authorization")) return request;
+
     const token = await provideAccessToken();
     if (token !== null) {
       request.headers.set("Authorization", `Bearer ${token}`);
