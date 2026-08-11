@@ -5,6 +5,11 @@ const baseURL = `http://127.0.0.1:${PORT}`;
 
 export default defineConfig({
   testDir: "./e2e",
+  // The authenticated suite lives under e2e/auth and needs Docker, a fake API
+  // and a Redis that only playwright.auth.config.ts starts. Without this the
+  // recursive testDir would collect those specs here too, and they would fail
+  // against a server with none of it running.
+  testIgnore: ["auth/**"],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
