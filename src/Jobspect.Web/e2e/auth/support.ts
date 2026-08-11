@@ -31,6 +31,17 @@ export function redisClient(): Redis {
   return new Redis({ host: "127.0.0.1", port: REDIS_PORT, maxRetriesPerRequest: 1 });
 }
 
+/**
+ * The account the shell header names.
+ *
+ * Worth asserting on rather than the URL alone: the header reads it through the
+ * DAL, so seeing it means a request went out carrying a bearer token the API
+ * accepted, not merely that a redirect landed.
+ */
+export function signedInAs(page: Page, email: string) {
+  return page.getByRole("banner").getByText(email);
+}
+
 export async function sessionCookie(context: BrowserContext) {
   const cookies = await context.cookies();
   return cookies.find((cookie) => cookie.name === SESSION_COOKIE);

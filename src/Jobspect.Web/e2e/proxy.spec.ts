@@ -133,23 +133,81 @@ test.describe("the session cookie", () => {
   });
 });
 
-test.describe("a route that means nothing without an account", () => {
-  test("sends a visitor with no cookie to sign in", async ({ page }) => {
-    await page.goto("/applications");
+// Driven by hand rather than by a <Link>, and that is not a shortcut. A dynamic
+// route is only prefetched when it has a loading.tsx to prefetch, and none of
+// these do yet - so waiting for the browser to issue one would be waiting for a
+// request it has no reason to make. Sending the header states the same thing and
+// keeps stating it once the skeletons land.
+test.describe("a prefetch", () => {
+  const PREFETCH = { "Next-Router-Prefetch": "1", RSC: "1" };
 
-    await expect(page).toHaveURL(/\/login$/);
+  test("is left alone by the proxy", async ({ request }) => {
+    const response = await request.get("/login", { headers: PREFETCH });
+
+    // No policy means the proxy did not run, which is the whole assertion: the
+    // matcher has to exclude it, because Next strips these headers from the
+    // request before the proxy function could ever read them.
+    expect(response.headers()["content-security-policy"]).toBeUndefined();
   });
 
-  test("fails closed when the session store cannot be reached", async ({ request }) => {
-    // A cookie gets past the proxy, which holds no signature and reads no Redis.
-    // The page then asks the DAL, and the DAL cannot reach Redis here - no
-    // session store runs in this suite. Landing on the login page is the whole
-    // point: a process that cannot read a session must refuse to serve one
-    // rather than render as though there were none.
-    const response = await request.get("/applications", {
+  test("does not re-stamp the session cookie", async ({ request }) => {
+    const response = await request.get("/login", {
+      headers: { ...PREFETCH, Cookie: `${SESSION_COOKIE}=not-a-real-session` },
+    });
+
+    const setCookie = response
+      .headersArray()
+      .filter((header) => header.name.toLowerCase() === "set-cookie")
+      .map((header) => header.value);
+
+    expect(setCookie.filter((value) => value.startsWith(SESSION_COOKIE))).toEqual([]);
+  });
+
+  test("is the only thing excluded - the same request without the header is not", async ({
+    request,
+  }) => {
+    // The control. Without it these two would pass just as well against a
+    // matcher that had stopped running on anything at all.
+    const response = await request.get("/login", {
       headers: { Cookie: `${SESSION_COOKIE}=not-a-real-session` },
     });
 
-    expect(new URL(response.url()).pathname).toBe("/login");
+    expect(response.headers()["content-security-policy"]).toBeTruthy();
+    expect(
+      response
+        .headersArray()
+        .filter((header) => header.name.toLowerCase() === "set-cookie")
+        .map((header) => header.value)
+        .filter((value) => value.startsWith(SESSION_COOKIE)),
+    ).toHaveLength(1);
   });
+});
+
+test.describe("a route that means nothing without an account", () => {
+  // Every one of them, not a representative. A new screen that forgets its
+  // requireSession() call still redirects for a visitor with no cookie, because
+  // the proxy catches that case - so a list is what notices the page itself is
+  // no longer guarded.
+  const GUARDED = ["/applications", "/board", "/analytics", "/reminders", "/settings"];
+
+  for (const path of GUARDED) {
+    test(`${path} sends a visitor with no cookie to sign in`, async ({ page }) => {
+      await page.goto(path);
+
+      await expect(page).toHaveURL(/\/login$/);
+    });
+
+    test(`${path} fails closed when the session store cannot be reached`, async ({ request }) => {
+      // A cookie gets past the proxy, which holds no signature and reads no
+      // Redis. The page then asks the DAL, and the DAL cannot reach Redis here -
+      // no session store runs in this suite. Landing on the login page is the
+      // whole point: a process that cannot read a session must refuse to serve
+      // one rather than render as though there were none.
+      const response = await request.get(path, {
+        headers: { Cookie: `${SESSION_COOKIE}=not-a-real-session` },
+      });
+
+      expect(new URL(response.url()).pathname).toBe("/login");
+    });
+  }
 });

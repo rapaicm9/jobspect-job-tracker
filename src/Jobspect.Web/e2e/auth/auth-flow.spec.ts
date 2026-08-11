@@ -7,6 +7,7 @@ import {
   registerThroughTheForm,
   seedAccount,
   sessionCookie,
+  signedInAs,
   signInThroughTheForm,
 } from "./support";
 
@@ -21,10 +22,10 @@ test.describe("registering", () => {
 
     await registerThroughTheForm(page, email);
 
-    // Rendering the address proves more than the redirect does: the page calls
+    // Rendering the address proves more than the redirect does: the shell calls
     // getAccount through the DAL, so the account it names came back from a
     // request the fake API accepted a bearer token for.
-    await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+    await expect(signedInAs(page, email)).toBeVisible();
 
     const cookie = await sessionCookie(context);
 
@@ -48,7 +49,7 @@ test.describe("registering", () => {
     // A second request, so the cookie made the round trip and the record behind
     // it resolved out of Redis rather than out of anything in memory.
     await expect(page).toHaveURL(/\/applications$/);
-    await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+    await expect(signedInAs(page, email)).toBeVisible();
   });
 });
 
@@ -97,7 +98,7 @@ test.describe("signing in", () => {
     await signInThroughTheForm(page, email);
 
     await expect(page).toHaveURL(/\/applications$/);
-    await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+    await expect(signedInAs(page, email)).toBeVisible();
     expect(await sessionCookie(context)).toBeDefined();
   });
 });
