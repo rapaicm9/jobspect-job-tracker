@@ -56,6 +56,12 @@ const refreshTokens = new Map<string, RefreshTokenRecord>();
 // which is what lets the suite stay fully parallel against one process.
 const applications = new Map<string, ApplicationSummaryResponse[]>();
 
+/** Counted so a spec can assert the first page is not fetched twice. */
+const listCalls = new Map<string, number>();
+
+/** Armed by a test seam; spent by the next cursored read. */
+let expireNextCursor = false;
+
 function accountKey(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -172,6 +178,44 @@ function anApplication(seed: Partial<ApplicationSummaryResponse>): ApplicationSu
   };
 }
 
+/** The tag the cursor carries, so a walk cannot survive a change of order. */
+function sortTag(sortBy: string, descending: boolean): string {
+  return `${sortBy}:${descending ? "desc" : "asc"}`;
+}
+
+function encodeCursor(sort: string, offset: number): string {
+  return Buffer.from(`${sort}:${String(offset)}`).toString("base64url");
+}
+
+function decodeCursor(cursor: string): { sort: string; offset: number } | null {
+  const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+  const separator = decoded.lastIndexOf(":");
+  const offset = Number(decoded.slice(separator + 1));
+
+  if (separator === -1 || !Number.isInteger(offset)) return null;
+
+  return { sort: decoded.slice(0, separator), offset };
+}
+
+function compareApplications(
+  a: ApplicationSummaryResponse,
+  b: ApplicationSummaryResponse,
+  sortBy: string,
+  descending: boolean,
+): number {
+  const left = sortBy === "applicationDeadline" ? a.applicationDeadline : a.appliedDate;
+  const right = sortBy === "applicationDeadline" ? b.applicationDeadline : b.appliedDate;
+
+  // Nulls last whichever way the sort runs, which is what the real query does:
+  // an application with no deadline has not got a late one.
+  if (left === null && right === null) return a.id < b.id ? -1 : 1;
+  if (left === null) return 1;
+  if (right === null) return -1;
+
+  if (left === right) return a.id < b.id ? -1 : 1;
+  return (left < right ? -1 : 1) * (descending ? -1 : 1);
+}
+
 function accountById(userId: string): Account | undefined {
   for (const account of accounts.values()) {
     if (account.userId === userId) return account;
@@ -230,6 +274,28 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  // Forces the next cursored read to answer as a stale cursor. The real API
+  // reaches that state when the order changes under a walk in flight, which no
+  // client can be made to do on purpose - so the state is what gets seeded here
+  // rather than the route to it.
+  if (method === "POST" && path === "/__test/expire-cursors") {
+    expireNextCursor = true;
+    send(response, 204, undefined);
+    return;
+  }
+
+  // How many times the client actually asked. The assertion it exists for is
+  // that a server-rendered first page is not fetched a second time on mount.
+  if (method === "GET" && path === "/__test/application-requests") {
+    const email = new URL(url, "http://fake-api.test").searchParams.get("email") ?? "";
+    const account = accounts.get(accountKey(email));
+
+    send(response, 200, {
+      count: account === undefined ? 0 : (listCalls.get(account.userId) ?? 0),
+    });
+    return;
+  }
+
   if (method === "GET" && path === "/api/v1/applications") {
     const token = bearerOf(request);
     const userId = token === null ? undefined : accessTokens.get(token);
@@ -239,12 +305,47 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
       return;
     }
 
-    // Everything seeded, in one page. Paging belongs to the commit that adds a
-    // client which pages - a fake that walked a cursor before then would only be
-    // asserting itself.
+    listCalls.set(userId, (listCalls.get(userId) ?? 0) + 1);
+
+    const query = new URL(url, "http://fake-api.test").searchParams;
+    const sortBy = query.get("sortBy") ?? "appliedDate";
+    const descending = (query.get("sortDirection") ?? "desc") === "desc";
+    const stages = query.getAll("stage");
+    const limit = Number(query.get("limit") ?? 25);
+    const cursor = query.get("cursor");
+
+    let offset = 0;
+    if (cursor !== null) {
+      const decoded = decodeCursor(cursor);
+
+      // The cursor carries the sort that issued it, exactly as the real one
+      // does, so a walk cannot be continued under an order it did not start in.
+      if (expireNextCursor || decoded === null || decoded.sort !== sortTag(sortBy, descending)) {
+        expireNextCursor = false;
+        sendProblem(
+          response,
+          422,
+          "cursor.sort_mismatch",
+          "That cursor was issued for a different order.",
+        );
+        return;
+      }
+
+      offset = decoded.offset;
+    }
+
+    const all = (applications.get(userId) ?? [])
+      .filter((application) => stages.length === 0 || stages.includes(application.stage))
+      .sort((a, b) => compareApplications(a, b, sortBy, descending));
+
+    const items = all.slice(offset, offset + limit);
+    const next = offset + items.length;
+
     send(response, 200, {
-      items: applications.get(userId) ?? [],
-      nextCursor: null,
+      items,
+      // Null is the only stop signal the client reads, so it has to be null at
+      // the end rather than a cursor pointing past the last row.
+      nextCursor: next < all.length ? encodeCursor(sortTag(sortBy, descending), next) : null,
     } satisfies ApplicationPage);
     return;
   }

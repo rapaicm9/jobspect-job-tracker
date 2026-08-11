@@ -84,6 +84,29 @@ export async function seedApplications(
   expect(response.status, "the fake API seeded the applications").toBe(201);
 }
 
+/**
+ * Arms the fake to answer the next cursored read as a stale cursor.
+ *
+ * The real API reaches that state when the order changes under a walk already in
+ * flight, which no client can be made to do deliberately - so the state is
+ * seeded rather than the route to it.
+ */
+export async function expireCursors(): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/expire-cursors`, { method: "POST" });
+
+  expect(response.status, "the fake API armed the stale cursor").toBe(204);
+}
+
+/** How many times the client actually asked the API for a page. */
+export async function applicationRequestCount(email: string): Promise<number> {
+  const response = await fetch(
+    `${FAKE_API_ORIGIN}/__test/application-requests?email=${encodeURIComponent(email)}`,
+  );
+  const body = (await response.json()) as { count: number };
+
+  return body.count;
+}
+
 /** Seeds an account straight into the fake API, bypassing the register form. */
 export async function seedAccount(email: string): Promise<void> {
   const response = await fetch(`${FAKE_API_ORIGIN}/__test/accounts`, {

@@ -1,20 +1,28 @@
 import type { Metadata } from "next";
 
 import {
-  ApplicationCards,
-  ApplicationsTable,
-  listApplications,
+  applicationsSearchParams,
+  ApplicationsBrowser,
+  listFirstPage,
   readViewPreferences,
   ViewPreferencesForm,
 } from "@/features/applications";
+import { STAGES } from "@/server/api/enums";
 
 export const metadata: Metadata = { title: "Applications — Jobspect" };
 
-export default async function ApplicationsPage() {
-  // The query calls requireSession itself, so the guard is inside the read
-  // rather than beside it - a list that could be fetched without one would be a
-  // list somebody could fetch without one.
-  const [{ rows }, preferences] = await Promise.all([listApplications(), readViewPreferences()]);
+export default async function ApplicationsPage({ searchParams }: PageProps<"/applications">) {
+  // Parsed here and nowhere else: the cache is what lets a Server Component
+  // below this one read the same filters without threading them through, and it
+  // is only populated by this call.
+  const filters = await applicationsSearchParams.parse(searchParams);
+
+  const [initialPage, preferences] = await Promise.all([
+    listFirstPage(filters),
+    readViewPreferences(),
+  ]);
+
+  const empty = initialPage.rows.length === 0 && filters.stage.length === 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -23,15 +31,13 @@ export default async function ApplicationsPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Applications</h1>
           {/* No count, here or anywhere. The API returns none by design, and a
               count of the rows that happen to be loaded reads as a total. */}
-          <p className="text-sm text-muted-foreground">
-            Every application you have recorded, newest first.
-          </p>
+          <p className="text-sm text-muted-foreground">Every application you have recorded.</p>
         </div>
 
-        {rows.length > 0 && <ViewPreferencesForm preferences={preferences} />}
+        {!empty && <ViewPreferencesForm preferences={preferences} />}
       </div>
 
-      {rows.length === 0 ? (
+      {empty ? (
         <div className="rounded-lg border border-dashed border-border px-6 py-12 text-center">
           <p className="font-medium text-foreground">No applications yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -39,10 +45,14 @@ export default async function ApplicationsPage() {
           </p>
         </div>
       ) : (
-        <>
-          <ApplicationsTable rows={rows} preferences={preferences} />
-          <ApplicationCards rows={rows} preferences={preferences} />
-        </>
+        <ApplicationsBrowser
+          filters={filters}
+          preferences={preferences}
+          // The union lives behind `server-only`, so the client is handed it
+          // rather than importing it.
+          stages={STAGES}
+          initialPage={initialPage}
+        />
       )}
     </div>
   );
