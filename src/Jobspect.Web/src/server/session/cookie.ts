@@ -23,7 +23,19 @@ export async function writeSessionCookie(sid: string, expiresAt: Date): Promise<
   store.set(SESSION_COOKIE, sid, { ...SESSION_COOKIE_ATTRIBUTES, expires: expiresAt });
 }
 
+/**
+ * Expired in place rather than `delete`d by name.
+ *
+ * `cookies().delete(name)` emits a `Set-Cookie` carrying the name, an empty
+ * value and an expiry in 1970 - and no other attribute. The `__Host-` prefix
+ * rules apply to that line as much as to the one that set the cookie, so a
+ * browser refuses it for want of `Secure` and `Path=/` and keeps the cookie it
+ * was just told to drop. Signing out then cleared the session record while
+ * leaving the browser holding its id for another thirty days, and the next visit
+ * read as "your session ended" rather than as a sign-out.
+ */
 export async function clearSessionCookie(): Promise<void> {
   const store = await cookies();
-  store.delete(SESSION_COOKIE);
+
+  store.set(SESSION_COOKIE, "", { ...SESSION_COOKIE_ATTRIBUTES, maxAge: 0 });
 }

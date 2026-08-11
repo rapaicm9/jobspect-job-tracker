@@ -112,6 +112,10 @@ export function proxy(request: NextRequest) {
   // that owns response headers, and it needs to know nothing about the session
   // to do it. A cookie outliving its record costs nothing: the lookup misses and
   // the user signs in.
+  //
+  // Safe on a Server Action's request too, which this also runs on: response
+  // cookies are keyed by name and the action writes after this, so a sign-out
+  // clearing the cookie is never undone by the re-stamp.
   if (sid !== undefined) {
     response.cookies.set(SESSION_COOKIE, sid, {
       ...SESSION_COOKIE_ATTRIBUTES,
