@@ -1,7 +1,6 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { useState } from "react";
 
 import type { ApplicationFilters } from "../filters";
@@ -19,12 +18,13 @@ export interface ApplicationsBrowserProps {
 }
 
 /**
- * Both providers, scoped to the one screen that needs them.
+ * The Query provider, scoped to the one screen that needs it.
  *
  * §5 permits TanStack Query in three places and this is the first; a provider in
- * the shell would make a fourth use the path of least resistance. nuqs needs its
- * own adapter above any `useQueryState` - the library's guidance puts it in the
- * root layout, and it sits here for the same reason the Query one does.
+ * the shell would make a fourth use the path of least resistance. nuqs's adapter
+ * used to sit here too and now lives in the shell layout, because the campaign
+ * switcher writes URL state from the header and a provider cannot be below its
+ * consumer.
  */
 export function ApplicationsBrowser({
   filters,
@@ -49,11 +49,9 @@ export function ApplicationsBrowser({
   );
 
   return (
-    <NuqsAdapter>
-      <QueryClientProvider client={queryClient}>
-        <FilterBar stages={stages} />
-        <ApplicationsList filters={filters} preferences={preferences} initialPage={initialPage} />
-      </QueryClientProvider>
-    </NuqsAdapter>
+    <QueryClientProvider client={queryClient}>
+      <FilterBar stages={stages} />
+      <ApplicationsList filters={filters} preferences={preferences} initialPage={initialPage} />
+    </QueryClientProvider>
   );
 }

@@ -22,6 +22,7 @@ import type { components } from "../../src/server/api/schema";
 type AuthTokensResponse = components["schemas"]["AuthTokensResponse"];
 type AccountResponse = components["schemas"]["AccountResponse"];
 type ApplicationSummaryResponse = components["schemas"]["ApplicationSummaryResponse"];
+type CampaignResponse = components["schemas"]["CampaignResponse"];
 type ApplicationPage = components["schemas"]["PagedResponseOfApplicationSummaryResponse"];
 type RegisterRequest = components["schemas"]["RegisterRequest"];
 type LoginRequest = components["schemas"]["LoginRequest"];
@@ -59,6 +60,11 @@ const applications = new Map<string, ApplicationSummaryResponse[]>();
 /** Counted so a spec can assert the first page is not fetched twice. */
 const listCalls = new Map<string, number>();
 
+// Every account gets one on registration, as the real one does. A second only
+// exists where a spec asked for it, which is what makes the switcher's "hidden
+// until there is a choice" rule assertable from both sides.
+const campaigns = new Map<string, CampaignResponse[]>();
+
 /** Armed by a test seam; spent by the next cursored read. */
 let expireNextCursor = false;
 
@@ -76,6 +82,20 @@ function createAccount(email: string, password: string, timeZoneId: string | nul
   };
 
   accounts.set(accountKey(email), account);
+
+  // The real API creates a default campaign when an account registers, and the
+  // switcher's whole behaviour turns on how many there are.
+  campaigns.set(account.userId, [
+    {
+      id: randomUUID(),
+      name: "Job search",
+      isDefault: true,
+      applicationCount: 0,
+      createdAt: account.createdAt,
+      updatedAt: null,
+    },
+  ]);
+
   return account;
 }
 
@@ -296,6 +316,43 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  // Adds a second campaign, which is the only way the switcher appears.
+  if (method === "POST" && path === "/__test/campaigns") {
+    const body = await readJson<{ email: string; name: string }>(request);
+    const account = accounts.get(accountKey(body?.email ?? ""));
+
+    if (body === null || account === undefined) {
+      sendProblem(response, 404, "account.not_found", "Seed an account before its campaigns.");
+      return;
+    }
+
+    const campaign: CampaignResponse = {
+      id: randomUUID(),
+      name: body.name,
+      isDefault: false,
+      applicationCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: null,
+    };
+
+    campaigns.set(account.userId, [...(campaigns.get(account.userId) ?? []), campaign]);
+    send(response, 201, { id: campaign.id });
+    return;
+  }
+
+  if (method === "GET" && path === "/api/v1/campaigns") {
+    const token = bearerOf(request);
+    const userId = token === null ? undefined : accessTokens.get(token);
+
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    send(response, 200, campaigns.get(userId) ?? []);
+    return;
+  }
+
   if (method === "GET" && path === "/api/v1/applications") {
     const token = bearerOf(request);
     const userId = token === null ? undefined : accessTokens.get(token);
@@ -311,6 +368,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     const sortBy = query.get("sortBy") ?? "appliedDate";
     const descending = (query.get("sortDirection") ?? "desc") === "desc";
     const stages = query.getAll("stage");
+    const campaignId = query.get("campaignId");
     const limit = Number(query.get("limit") ?? 25);
     const cursor = query.get("cursor");
 
@@ -335,6 +393,10 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     }
 
     const all = (applications.get(userId) ?? [])
+      // An absent campaignId is every campaign rather than none: the real API
+      // applies the account's default, and a seed that names no campaign belongs
+      // to it.
+      .filter((application) => campaignId === null || application.campaignId === campaignId)
       .filter((application) => stages.length === 0 || stages.includes(application.stage))
       .sort((a, b) => compareApplications(a, b, sortBy, descending));
 

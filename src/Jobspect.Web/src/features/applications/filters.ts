@@ -1,5 +1,7 @@
 import { parseAsArrayOf, parseAsString, parseAsStringLiteral } from "nuqs/server";
 
+import { campaignScopeParsers } from "@/features/campaigns";
+
 /**
  * What the URL owns: what is being looked at, and nothing about how.
  *
@@ -36,18 +38,25 @@ export const filterParsers = {
   stage: parseAsArrayOf(parseAsString).withDefault([]),
   sortBy: parseAsStringLiteral(SORT_KEYS).withDefault(DEFAULT_SORT),
   sortDirection: parseAsStringLiteral(SORT_DIRECTIONS).withDefault(DEFAULT_DIRECTION),
+  // The campaign scope is not this list's to define - it is a context spanning
+  // three screens - but the list has to read it, so the parser comes from the
+  // slice that owns it rather than being declared again here.
+  ...campaignScopeParsers,
 };
 
 export interface ApplicationFilters {
   stage: string[];
   sortBy: SortKey;
   sortDirection: SortDirection;
+  /** Absent means the account's default campaign, which the API applies. */
+  campaignId: string | null;
 }
 
 export const DEFAULT_FILTERS: ApplicationFilters = {
   stage: [],
   sortBy: DEFAULT_SORT,
   sortDirection: DEFAULT_DIRECTION,
+  campaignId: null,
 };
 
 /**
@@ -59,5 +68,14 @@ export const DEFAULT_FILTERS: ApplicationFilters = {
  * required rather than tidy.
  */
 export function applicationsQueryKey(filters: ApplicationFilters): readonly unknown[] {
-  return ["applications", [...filters.stage].sort(), filters.sortBy, filters.sortDirection];
+  return [
+    "applications",
+    // First, because it is the coarsest: two campaigns are two lists, not one
+    // list read two ways. Leaving it out would hand a new campaign the previous
+    // one's cached rows and its cursor.
+    filters.campaignId,
+    [...filters.stage].sort(),
+    filters.sortBy,
+    filters.sortDirection,
+  ];
 }

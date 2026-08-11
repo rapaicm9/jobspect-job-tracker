@@ -21,6 +21,8 @@ describe("the filter parsers", () => {
       stage: ["Applied", "Offer"],
       sortBy: "applicationDeadline",
       sortDirection: "asc",
+      // Absent from the URL, and absent means the account's default campaign.
+      campaignId: null,
     });
   });
 

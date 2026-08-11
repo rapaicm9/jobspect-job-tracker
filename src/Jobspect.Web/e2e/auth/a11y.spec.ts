@@ -37,6 +37,22 @@ for (const colorScheme of ["light", "dark"] as const) {
   test.describe(`${colorScheme} theme`, () => {
     test.use({ colorScheme });
 
+    test("the command palette has none while it is open", async ({ page }) => {
+      await registerThroughTheForm(page, anEmail());
+
+      await page.keyboard.press("ControlOrMeta+k");
+      await expect(page.getByPlaceholder("Go to a screen or switch campaign")).toBeVisible();
+
+      // A dialog over a combobox is the most accessibility-sensitive thing on
+      // this screen, and a sweep with it closed would never see any of it.
+      const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
+
+      expect(
+        violations.map((v) => `${v.id} (${v.nodes.length}): ${v.help}`),
+        "axe found violations with the palette open",
+      ).toEqual([]);
+    });
+
     test("the shell has no accessibility violations on any destination", async ({ page }) => {
       const email = anEmail();
       await registerThroughTheForm(page, email);

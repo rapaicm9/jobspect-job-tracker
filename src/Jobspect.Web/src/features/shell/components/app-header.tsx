@@ -1,23 +1,21 @@
 import Link from "next/link";
 
 import { logout } from "@/features/auth";
+import { CampaignSwitcher, type Campaign } from "@/features/campaigns";
 import { Button } from "@/ui/button";
 
 import { AppNav } from "./app-nav";
+import { CommandPalette } from "./command-palette";
 
 export interface AppHeaderProps {
   /** Null when the account could not be read. The header still renders. */
   email: string | null;
+  /** Read once by the layout and shared by both consumers below. */
+  campaigns: Campaign[];
 }
 
-/**
- * The frame every signed-in screen renders inside.
- *
- * The campaign switcher belongs between the nav and the account, and arrives
- * with the list it scopes - a switcher over one screen would be a control with
- * nothing to change.
- */
-export function AppHeader({ email }: AppHeaderProps) {
+/** The frame every signed-in screen renders inside. */
+export function AppHeader({ email, campaigns }: AppHeaderProps) {
   return (
     <header className="border-b border-border bg-background">
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-6 py-3">
@@ -31,6 +29,11 @@ export function AppHeader({ email }: AppHeaderProps) {
         <AppNav />
 
         <div className="ml-auto flex items-center gap-3">
+          {/* The campaign is the context every scoped screen is read through, so
+              it sits with the account rather than in any one screen's filters. */}
+          <CampaignSwitcher campaigns={campaigns} />
+
+          <CommandPalette campaigns={campaigns} />
           {email !== null && (
             // Hidden on narrow screens rather than truncated: an address cut to
             // "mihajlo.rap…" identifies nobody, and the account it names is

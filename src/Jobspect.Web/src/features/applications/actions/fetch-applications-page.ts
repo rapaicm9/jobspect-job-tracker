@@ -24,6 +24,7 @@ const inputSchema = z.object({
     stage: z.array(z.string().max(50)).max(STAGES.length),
     sortBy: z.enum(SORT_KEYS),
     sortDirection: z.enum(SORT_DIRECTIONS),
+    campaignId: z.string().max(64).nullable(),
   }),
   cursor: z.string().min(1).max(512).nullable(),
 });

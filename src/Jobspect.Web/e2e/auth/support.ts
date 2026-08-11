@@ -97,6 +97,23 @@ export async function expireCursors(): Promise<void> {
   expect(response.status, "the fake API armed the stale cursor").toBe(204);
 }
 
+/**
+ * Adds a second campaign, which is the only way the switcher appears: every
+ * account registers with one, and only creating another is entitled.
+ */
+export async function seedCampaign(email: string, name: string): Promise<string> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/campaigns`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, name }),
+  });
+
+  expect(response.status, "the fake API seeded the campaign").toBe(201);
+
+  const body = (await response.json()) as { id: string };
+  return body.id;
+}
+
 /** How many times the client actually asked the API for a page. */
 export async function applicationRequestCount(email: string): Promise<number> {
   const response = await fetch(

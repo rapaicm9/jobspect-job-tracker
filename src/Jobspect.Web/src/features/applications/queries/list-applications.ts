@@ -67,6 +67,10 @@ export async function listApplications({
           // same request as an absent one, and only one of them means "every
           // stage".
           ...(stage.length > 0 ? { stage } : {}),
+          // Omitted rather than guessed at when the URL carries no scope: the
+          // API applies the account's default campaign, and picking one here
+          // would mean this client deciding what "no campaign" means.
+          ...(filters.campaignId !== null ? { campaignId: filters.campaignId } : {}),
           ...(cursor !== null ? { cursor } : {}),
         },
       },
