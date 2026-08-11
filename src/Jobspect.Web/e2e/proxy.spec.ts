@@ -190,6 +190,13 @@ test.describe("a route that means nothing without an account", () => {
   // no longer guarded.
   const GUARDED = ["/applications", "/board", "/analytics", "/reminders", "/settings"];
 
+  // A route with a loading.tsx answers differently, and it is worth knowing why.
+  // Next wraps such a page in Suspense and starts streaming the shell at 200
+  // before the page has finished - so a redirect thrown after that point cannot
+  // be an HTTP 302 and is completed by the client instead. The guarantee is the
+  // same, "the user ends up at login", but only a browser can observe it.
+  const STREAMS = new Set(["/applications"]);
+
   for (const path of GUARDED) {
     test(`${path} sends a visitor with no cookie to sign in`, async ({ page }) => {
       await page.goto(path);
@@ -197,17 +204,36 @@ test.describe("a route that means nothing without an account", () => {
       await expect(page).toHaveURL(/\/login$/);
     });
 
-    test(`${path} fails closed when the session store cannot be reached`, async ({ request }) => {
+    test(`${path} fails closed when the session store cannot be reached`, async ({
+      browser,
+      request,
+    }) => {
       // A cookie gets past the proxy, which holds no signature and reads no
       // Redis. The page then asks the DAL, and the DAL cannot reach Redis here -
       // no session store runs in this suite. Landing on the login page is the
       // whole point: a process that cannot read a session must refuse to serve
       // one rather than render as though there were none.
-      const response = await request.get(path, {
-        headers: { Cookie: `${SESSION_COOKIE}=not-a-real-session` },
-      });
+      //
+      // Sent as a header rather than seeded into the browser, because a __Host-
+      // cookie cannot be added through CDP.
+      const cookie = `${SESSION_COOKIE}=not-a-real-session`;
 
-      expect(new URL(response.url()).pathname).toBe("/login");
+      if (!STREAMS.has(path)) {
+        const response = await request.get(path, { headers: { Cookie: cookie } });
+
+        expect(new URL(response.url()).pathname).toBe("/login");
+        return;
+      }
+
+      const context = await browser.newContext({ extraHTTPHeaders: { Cookie: cookie } });
+      try {
+        const page = await context.newPage();
+        await page.goto(path);
+
+        await expect(page).toHaveURL(/\/login$/);
+      } finally {
+        await context.close();
+      }
     });
   }
 });

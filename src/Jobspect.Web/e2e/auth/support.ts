@@ -65,6 +65,25 @@ export async function signInThroughTheForm(page: Page, email: string): Promise<v
   await submitCredentials(page, email, "Sign in");
 }
 
+/**
+ * Seeds a list for an account that already exists.
+ *
+ * The fake fills in every field the spec did not name, so a spec about columns
+ * states only the values it asserts rather than a full DTO literal.
+ */
+export async function seedApplications(
+  email: string,
+  applications: Record<string, unknown>[],
+): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/applications`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, applications }),
+  });
+
+  expect(response.status, "the fake API seeded the applications").toBe(201);
+}
+
 /** Seeds an account straight into the fake API, bypassing the register form. */
 export async function seedAccount(email: string): Promise<void> {
   const response = await fetch(`${FAKE_API_ORIGIN}/__test/accounts`, {

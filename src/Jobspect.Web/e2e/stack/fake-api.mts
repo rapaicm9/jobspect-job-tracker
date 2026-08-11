@@ -21,6 +21,8 @@ import type { components } from "../../src/server/api/schema";
 
 type AuthTokensResponse = components["schemas"]["AuthTokensResponse"];
 type AccountResponse = components["schemas"]["AccountResponse"];
+type ApplicationSummaryResponse = components["schemas"]["ApplicationSummaryResponse"];
+type ApplicationPage = components["schemas"]["PagedResponseOfApplicationSummaryResponse"];
 type RegisterRequest = components["schemas"]["RegisterRequest"];
 type LoginRequest = components["schemas"]["LoginRequest"];
 type RefreshRequest = components["schemas"]["RefreshRequest"];
@@ -49,6 +51,10 @@ interface RefreshTokenRecord {
 const accounts = new Map<string, Account>();
 const accessTokens = new Map<string, string>();
 const refreshTokens = new Map<string, RefreshTokenRecord>();
+
+// Keyed by account so two specs running at once cannot read each other's rows,
+// which is what lets the suite stay fully parallel against one process.
+const applications = new Map<string, ApplicationSummaryResponse[]>();
 
 function accountKey(email: string): string {
   return email.trim().toLowerCase();
@@ -139,6 +145,33 @@ function bearerOf(request: IncomingMessage): string | null {
   return header.slice("Bearer ".length);
 }
 
+/**
+ * Fills in everything a spec did not care to state.
+ *
+ * A list spec is about columns, so it names the fields it asserts and lets the
+ * rest be plausible - which keeps the interesting values visible in the spec
+ * rather than buried in a full DTO literal.
+ */
+function anApplication(seed: Partial<ApplicationSummaryResponse>): ApplicationSummaryResponse {
+  return {
+    id: randomUUID(),
+    campaignId: randomUUID(),
+    companyId: null,
+    companyName: null,
+    stage: "Applied",
+    role: "Engineer",
+    compensation: null,
+    location: null,
+    workMode: null,
+    source: null,
+    appliedDate: "2026-08-01",
+    applicationDeadline: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: null,
+    ...seed,
+  };
+}
+
 function accountById(userId: string): Account | undefined {
   for (const account of accounts.values()) {
     if (account.userId === userId) return account;
@@ -174,6 +207,45 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
     const account = createAccount(body.email, body.password, null);
     send(response, 201, { userId: account.userId });
+    return;
+  }
+
+  // Seeds a list for an account that already exists, so a spec about the table
+  // is not also a spec about creating applications - which has no write endpoint
+  // on this client yet anyway.
+  if (method === "POST" && path === "/__test/applications") {
+    const body = await readJson<{
+      email: string;
+      applications: Partial<ApplicationSummaryResponse>[];
+    }>(request);
+    const account = accounts.get(accountKey(body?.email ?? ""));
+
+    if (body === undefined || body === null || account === undefined) {
+      sendProblem(response, 404, "account.not_found", "Seed an account before its applications.");
+      return;
+    }
+
+    applications.set(account.userId, body.applications.map(anApplication));
+    send(response, 201, { count: body.applications.length });
+    return;
+  }
+
+  if (method === "GET" && path === "/api/v1/applications") {
+    const token = bearerOf(request);
+    const userId = token === null ? undefined : accessTokens.get(token);
+
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    // Everything seeded, in one page. Paging belongs to the commit that adds a
+    // client which pages - a fake that walked a cursor before then would only be
+    // asserting itself.
+    send(response, 200, {
+      items: applications.get(userId) ?? [],
+      nextCursor: null,
+    } satisfies ApplicationPage);
     return;
   }
 

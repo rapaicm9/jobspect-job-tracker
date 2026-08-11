@@ -1,7 +1,24 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { anEmail, registerThroughTheForm } from "./support";
+import { anEmail, registerThroughTheForm, seedApplications } from "./support";
+
+/**
+ * Repeated rather than imported from `enums.ts`, which opens with
+ * `import 'server-only'` and throws outside a bundler. The canonical list is
+ * already held to the contract by the enum agreement suite, so what is repeated
+ * here is a fixture rather than a second source of truth.
+ */
+const STAGES = [
+  "Applied",
+  "Screening",
+  "Interview",
+  "Offer",
+  "Accepted",
+  "Rejected",
+  "Withdrawn",
+  "Ghosted",
+];
 
 // The signed-in half of the product, which e2e/a11y.spec.ts cannot reach: those
 // routes redirect to /login without a session, so until this stack existed the
@@ -21,7 +38,26 @@ for (const colorScheme of ["light", "dark"] as const) {
     test.use({ colorScheme });
 
     test("the shell has no accessibility violations on any destination", async ({ page }) => {
-      await registerThroughTheForm(page, anEmail());
+      const email = anEmail();
+      await registerThroughTheForm(page, email);
+
+      // One row per stage, so the sweep judges every chip treatment rather than
+      // an empty table. The eight surface/foreground pairs exist because no
+      // single value cleared both contrast floors, and this is what checks that
+      // they still do - in both themes, which is where it went wrong before.
+      await seedApplications(
+        email,
+        STAGES.map((stage, index) => ({
+          stage,
+          role: `Engineer ${String(index)}`,
+          companyName: "Acme",
+          source: "LinkedIn",
+          compensation: { amount: 65000, currency: "GBP" },
+          location: "London",
+          workMode: "Hybrid",
+          applicationDeadline: "2026-09-01",
+        })),
+      );
 
       // One session across the five routes: signing in per route would be five
       // registrations to sweep one header.
