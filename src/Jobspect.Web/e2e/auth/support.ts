@@ -57,7 +57,13 @@ async function submitCredentials(page: Page, email: string, label: string): Prom
 export async function registerThroughTheForm(page: Page, email: string): Promise<void> {
   await page.goto("/register");
   await submitCredentials(page, email, "Create account");
-  await expect(page).toHaveURL(/\/applications$/);
+
+  // Longer than the default five seconds, because this one assertion waits on a
+  // Server Action, a call to the API, a Redis write, a redirect and the render
+  // of a screen that fetches its own first page. Every spec starts here, so when
+  // the suite is under load this is where the budget runs out first - and a
+  // genuine break still fails, only later.
+  await expect(page).toHaveURL(/\/applications$/, { timeout: 15_000 });
 }
 
 export async function signInThroughTheForm(page: Page, email: string): Promise<void> {
@@ -91,8 +97,13 @@ export async function seedApplications(
  * flight, which no client can be made to do deliberately - so the state is
  * seeded rather than the route to it.
  */
-export async function expireCursors(): Promise<void> {
-  const response = await fetch(`${FAKE_API_ORIGIN}/__test/expire-cursors`, { method: "POST" });
+export async function expireCursors(email: string): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/expire-cursors`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    // Named, so that a spec running beside this one cannot spend the arming.
+    body: JSON.stringify({ email }),
+  });
 
   expect(response.status, "the fake API armed the stale cursor").toBe(204);
 }
@@ -122,6 +133,22 @@ export async function applicationRequestCount(email: string): Promise<number> {
   const body = (await response.json()) as { count: number };
 
   return body.count;
+}
+
+/**
+ * Opens the command palette, having first waited for it to be listening.
+ *
+ * The shortcut is a window listener that only exists once the palette has
+ * hydrated, so a keypress sent before that is simply lost - which shows up as a
+ * palette that did not open, on a slow machine, sometimes. The trigger's
+ * keyboard hint is the signal to wait for: it is rendered from the client
+ * snapshot only, so seeing it means the component is running.
+ */
+export async function openPalette(page: Page): Promise<void> {
+  await expect(page.getByRole("button", { name: /⌘K|Ctrl K/ })).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+k");
+
+  await expect(page.getByPlaceholder("Go to a screen or switch campaign")).toBeVisible();
 }
 
 /** Seeds an account straight into the fake API, bypassing the register form. */

@@ -152,11 +152,11 @@ test.describe("the walk", () => {
   });
 
   test("resets the walk silently when the cursor goes stale", async ({ page }) => {
-    await signInWith(page, 60);
+    const email = await signInWith(page, 60);
     await scrollToEnd(page);
     await expect.poll(() => rowCount(page)).toBe(50);
 
-    await expireCursors();
+    await expireCursors(email);
     await page.getByRole("button", { name: "Load more" }).click();
 
     // Back to one page, and nothing on screen says so. The user asked for more

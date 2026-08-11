@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { anEmail, registerThroughTheForm, seedApplications, seedCampaign } from "./support";
+import {
+  anEmail,
+  openPalette,
+  registerThroughTheForm,
+  seedApplications,
+  seedCampaign,
+} from "./support";
 
 // A campaign is a context rather than a filter: it spans three screens, lives in
 // the URL so a link carries it, and the control for it sits in the header.
@@ -80,7 +86,7 @@ test.describe("the command palette", () => {
   test("opens on the keyboard and closes on Escape", async ({ page }) => {
     await registerThroughTheForm(page, anEmail());
 
-    await page.keyboard.press("ControlOrMeta+k");
+    await openPalette(page);
     const input = page.getByPlaceholder("Go to a screen or switch campaign");
     await expect(input).toBeFocused();
 
@@ -94,7 +100,10 @@ test.describe("the command palette", () => {
   }) => {
     await registerThroughTheForm(page, anEmail());
 
-    await page.getByRole("button", { name: /Commands/ }).click();
+    // Matched on the hint rather than on "Commands" alone: the hint is rendered
+    // from the client snapshot only, so a button carrying it is a button whose
+    // click handler exists.
+    await page.getByRole("button", { name: /⌘K|Ctrl K/ }).click();
 
     await expect(page.getByPlaceholder("Go to a screen or switch campaign")).toBeVisible();
   });
@@ -102,7 +111,7 @@ test.describe("the command palette", () => {
   test("filters to a destination and goes there", async ({ page }) => {
     await registerThroughTheForm(page, anEmail());
 
-    await page.keyboard.press("ControlOrMeta+k");
+    await openPalette(page);
     await page.getByPlaceholder("Go to a screen or switch campaign").fill("analy");
 
     // Arrow first: Base UI does not highlight anything on its own, so Enter has
@@ -121,7 +130,7 @@ test.describe("the command palette", () => {
     await seedApplications(email, [{ role: "Only here", campaignId: second }]);
 
     await page.goto("/applications");
-    await page.keyboard.press("ControlOrMeta+k");
+    await openPalette(page);
     await page.getByPlaceholder("Go to a screen or switch campaign").fill("Contract");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
@@ -133,7 +142,7 @@ test.describe("the command palette", () => {
   test("offers no campaign commands when there is only one", async ({ page }) => {
     await registerThroughTheForm(page, anEmail());
 
-    await page.keyboard.press("ControlOrMeta+k");
+    await openPalette(page);
     await page.getByPlaceholder("Go to a screen or switch campaign").fill("Job search");
 
     // The account's own campaign is named "Job search" in the fake, so a match

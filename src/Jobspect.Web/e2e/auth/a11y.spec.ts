@@ -1,7 +1,7 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { anEmail, registerThroughTheForm, seedApplications } from "./support";
+import { anEmail, openPalette, registerThroughTheForm, seedApplications } from "./support";
 
 /**
  * Repeated rather than imported from `enums.ts`, which opens with
@@ -40,8 +40,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     test("the command palette has none while it is open", async ({ page }) => {
       await registerThroughTheForm(page, anEmail());
 
-      await page.keyboard.press("ControlOrMeta+k");
-      await expect(page.getByPlaceholder("Go to a screen or switch campaign")).toBeVisible();
+      await openPalette(page);
 
       // A dialog over a combobox is the most accessibility-sensitive thing on
       // this screen, and a sweep with it closed would never see any of it.

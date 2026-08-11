@@ -65,8 +65,15 @@ const listCalls = new Map<string, number>();
 // until there is a choice" rule assertable from both sides.
 const campaigns = new Map<string, CampaignResponse[]>();
 
-/** Armed by a test seam; spent by the next cursored read. */
-let expireNextCursor = false;
+/**
+ * Armed by a test seam; spent by that account's next cursored read.
+ *
+ * Keyed by account for the same reason the rows are: the suite runs its specs in
+ * parallel against one process, and a single flag here is a flag another spec's
+ * "load more" can spend first. That failure only appears at some worker counts,
+ * which is the worst kind.
+ */
+const expiredCursors = new Set<string>();
 
 function accountKey(email: string): string {
   return email.trim().toLowerCase();
@@ -299,7 +306,15 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   // client can be made to do on purpose - so the state is what gets seeded here
   // rather than the route to it.
   if (method === "POST" && path === "/__test/expire-cursors") {
-    expireNextCursor = true;
+    const body = await readJson<{ email: string }>(request);
+    const account = accounts.get(accountKey(body?.email ?? ""));
+
+    if (account === undefined) {
+      sendProblem(response, 404, "account.not_found", "Name the account to expire cursors for.");
+      return;
+    }
+
+    expiredCursors.add(account.userId);
     send(response, 204, undefined);
     return;
   }
@@ -378,8 +393,12 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
       // The cursor carries the sort that issued it, exactly as the real one
       // does, so a walk cannot be continued under an order it did not start in.
-      if (expireNextCursor || decoded === null || decoded.sort !== sortTag(sortBy, descending)) {
-        expireNextCursor = false;
+      if (
+        expiredCursors.has(userId) ||
+        decoded === null ||
+        decoded.sort !== sortTag(sortBy, descending)
+      ) {
+        expiredCursors.delete(userId);
         sendProblem(
           response,
           422,
