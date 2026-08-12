@@ -164,5 +164,12 @@ test.describe("the walk", () => {
     // not know they have.
     await expect.poll(() => rowCount(page)).toBe(25);
     await expect(page.getByText(/error|failed|went wrong/i)).toHaveCount(0);
+
+    // And it stays there. The reader is still at the bottom of a list that just
+    // got shorter, so a rule that re-arms the automatic page on a one-page list
+    // would fetch page two straight back - which asserting a moment rather than
+    // a resting state would not notice.
+    await expect(page.getByRole("button", { name: "Load more" })).toBeVisible();
+    await expect.poll(() => rowCount(page), { timeout: 2_000 }).toBe(25);
   });
 });

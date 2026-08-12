@@ -4,7 +4,7 @@
 // the render that produced page 1, and a keyset walk has to accumulate.
 
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/ui/button";
 
@@ -87,9 +87,12 @@ export function ApplicationsList({ filters, preferences, initialPage }: Applicat
       <ApplicationCards rows={rows} preferences={preferences} />
 
       <LoadMore
+        // Remounted when the filters change, which is what gives a new walk its
+        // own automatic first step. Holding that in state and clearing it from
+        // an effect would be the same thing with a render in between.
+        key={JSON.stringify(queryKey)}
         hasNextPage={hasNextPage}
         isFetching={isFetchingNextPage}
-        pagesLoaded={data.pages.length}
         onLoadMore={() => void fetchNextPage()}
       />
     </>
@@ -99,7 +102,6 @@ export function ApplicationsList({ filters, preferences, initialPage }: Applicat
 interface LoadMoreProps {
   hasNextPage: boolean;
   isFetching: boolean;
-  pagesLoaded: number;
   onLoadMore: () => void;
 }
 
@@ -111,35 +113,47 @@ interface LoadMoreProps {
  * screenful of a list they have just opened is worse again. One automatic page
  * covers the common case and the button keeps the long case controllable.
  *
+ * The automatic step is spent **once per walk**, tracked here rather than
+ * inferred from how many pages are loaded. Those two are not the same thing: a
+ * stale cursor resets the list back to one page while the reader is still at the
+ * bottom of it, and a count-based rule reads that as "first time at the end" and
+ * immediately fetches again - so a reset nobody asked for turns into another
+ * request, and the reset itself is never visible. Spending it once means the
+ * button is what appears instead, which is also the honest offer: the list moved
+ * under them, and going further is now their call.
+ *
  * No count on the button, for the same reason there is none anywhere else: the
  * only number available is how many rows happen to be loaded, and that reads as
  * a total.
  */
-function LoadMore({ hasNextPage, isFetching, pagesLoaded, onLoadMore }: LoadMoreProps) {
+function LoadMore({ hasNextPage, isFetching, onLoadMore }: LoadMoreProps) {
   const sentinel = useRef<HTMLDivElement>(null);
-  const shouldAutoLoad = pagesLoaded === 1 && hasNextPage && !isFetching;
+  const [autoLoadSpent, setAutoLoadSpent] = useState(false);
 
   useEffect(() => {
-    if (!shouldAutoLoad) return;
+    if (autoLoadSpent || !hasNextPage || isFetching) return;
 
     const target = sentinel.current;
     if (target === null) return;
 
     const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) onLoadMore();
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+
+      setAutoLoadSpent(true);
+      onLoadMore();
     });
 
     observer.observe(target);
     return () => {
       observer.disconnect();
     };
-  }, [shouldAutoLoad, onLoadMore]);
+  }, [autoLoadSpent, hasNextPage, isFetching, onLoadMore]);
 
   if (!hasNextPage) return null;
 
   return (
     <div ref={sentinel} className="flex justify-center py-4">
-      {pagesLoaded > 1 && (
+      {autoLoadSpent && (
         <Button type="button" variant="outline" onClick={onLoadMore} disabled={isFetching}>
           {isFetching ? "Loading…" : "Load more"}
         </Button>
