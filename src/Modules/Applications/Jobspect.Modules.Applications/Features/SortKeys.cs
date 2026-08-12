@@ -37,17 +37,71 @@ internal static class SortKeys
             ? new DateTimeOffset(ticks, TimeSpan.Zero)
             : null;
 
-    /// <summary>An application that never answered the field being sorted by.</summary>
-    private const string Unanswered = "n:";
+    /// <summary>
+    /// A row that has nothing to sort by - no answer to the field, or no deadline.
+    /// Those rows sort last, so a page can end inside that group and the next page
+    /// has to know it is resuming there rather than among the values.
+    /// </summary>
+    private const string Absent = "n:";
 
     /// <summary>An application that did, with the answer following.</summary>
     private const string AnsweredPrefix = "v:";
 
+    /// <summary>A row that has a deadline, with the date following.</summary>
+    private const string DatedPrefix = "d:";
+
+    /// <summary>
+    /// The position in a sort by an optional date, where a row without one sorts
+    /// last in both directions. The marker is what separates "no deadline" from a
+    /// deadline that failed to render, which an empty string could not.
+    /// </summary>
+    public static string ForOptionalDate(DateOnly? value) =>
+        value is { } date ? DatedPrefix + From(date) : Absent;
+
+    /// <summary>
+    /// Reads that position back: whether the last row had a deadline, and what it
+    /// was if so. Null when the key was not written by a sort of this kind.
+    /// </summary>
+    public static (bool Dated, DateOnly Date)? ToOptionalDate(string value) => value switch
+    {
+        Absent => (false, default(DateOnly)),
+        _ when value.StartsWith(DatedPrefix, StringComparison.Ordinal) =>
+            ToDate(value[DatedPrefix.Length..]) is { } date ? (true, date) : null,
+        _ => null,
+    };
+
+    private const char TagSeparator = '#';
+
+    /// <summary>
+    /// A sort key with the identity of the sort that issued it in front of the
+    /// position itself.
+    /// <para>
+    /// A list that can be ordered several ways needs this, because a position is
+    /// only meaningful under the ordering it was taken from: the same date and id
+    /// resume a descending walk in one place and an ascending walk in another. A
+    /// cursor carrying no identity is accepted by the wrong sort and returns pages
+    /// that look right and quietly repeat or drop the rows around the boundary.
+    /// The cursor is opaque by contract (ADR-0008), so the identity rides inside it
+    /// rather than becoming a parameter a client has to echo back correctly.
+    /// </para>
+    /// </summary>
+    public static string Tagged(string tag, string position) => $"{tag}{TagSeparator}{position}";
+
+    /// <summary>
+    /// The position inside a tagged key, or <c>null</c> when the key was issued
+    /// under a different sort - or under none, which is what an older or
+    /// hand-made cursor looks like.
+    /// </summary>
+    public static string? Position(string sortKey, string tag) =>
+        sortKey.Length > tag.Length
+        && sortKey.StartsWith(tag, StringComparison.Ordinal)
+        && sortKey[tag.Length] == TagSeparator
+            ? sortKey[(tag.Length + 1)..]
+            : null;
+
     /// <summary>
     /// The position in a custom-field sort, where the answer may be missing
-    /// entirely. Unanswered rows sort last, so a page can end inside that group and
-    /// the next page has to know it is resuming there rather than among the
-    /// answers - and an empty answer is a real answer, so the two cannot both be
+    /// entirely - and an empty answer is a real answer, so the two cannot both be
     /// the empty string. Hence the marker.
     /// <para>
     /// It stays inside the sort key rather than becoming a third field on the
@@ -56,7 +110,7 @@ internal static class SortKeys
     /// </para>
     /// </summary>
     public static string ForAnswer(string? answer) =>
-        answer is null ? Unanswered : AnsweredPrefix + answer;
+        answer is null ? Absent : AnsweredPrefix + answer;
 
     /// <summary>
     /// Reads that position back: whether the last row had answered, and what it
@@ -64,7 +118,7 @@ internal static class SortKeys
     /// </summary>
     public static (bool Answered, string Answer)? ToAnswer(string value) => value switch
     {
-        Unanswered => (false, string.Empty),
+        Absent => (false, string.Empty),
         _ when value.StartsWith(AnsweredPrefix, StringComparison.Ordinal) =>
             (true, value[AnsweredPrefix.Length..]),
         _ => null,

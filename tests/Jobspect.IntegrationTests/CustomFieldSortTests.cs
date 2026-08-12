@@ -217,8 +217,10 @@ public sealed class CustomFieldSortTests(ApiFixture fixture)
     {
         var tokens = await ProUserAsync();
 
+        // Keyed to the direction now that there are two things it could order by:
+        // naming one of them would be advice, not the problem.
         await (await _client.ListApplicationsAsync(tokens.AccessToken, sortDirection: "asc"))
-            .ShouldBeValidationProblemAsync("sortCustomFieldId");
+            .ShouldBeValidationProblemAsync("sortDirection");
 
         var field = await DefineAsync(tokens, "Referral source", "text");
         await (await _client.ListApplicationsAsync(
@@ -241,9 +243,12 @@ public sealed class CustomFieldSortTests(ApiFixture fixture)
 
         // The two orders position rows differently, so a cursor from one means
         // nothing to the other. Refused rather than silently restarting, which
-        // would let a client page the same rows forever.
+        // would let a client page the same rows forever - and refused by code
+        // rather than as a bad field, because the cursor is not malformed: the
+        // client changed the sort, which a client can recover from by starting the
+        // walk again.
         await (await _client.ListApplicationsAsync(tokens.AccessToken, cursor: sorted.NextCursor))
-            .ShouldBeValidationProblemAsync("cursor");
+            .ShouldBeProblemAsync(422, "cursor.sort_mismatch");
 
         var byDate = await (await _client.ListApplicationsAsync(tokens.AccessToken, limit: 1))
             .ReadPageAsync<ApplicationSummaryView>();
@@ -251,7 +256,7 @@ public sealed class CustomFieldSortTests(ApiFixture fixture)
 
         await (await _client.ListApplicationsAsync(
                 tokens.AccessToken, cursor: byDate.NextCursor, sortCustomFieldId: field.Id))
-            .ShouldBeValidationProblemAsync("cursor");
+            .ShouldBeProblemAsync(422, "cursor.sort_mismatch");
     }
 
     [Fact]

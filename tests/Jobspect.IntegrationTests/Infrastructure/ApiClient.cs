@@ -246,9 +246,13 @@ internal sealed record ApplicationSummaryView(
     Guid Id,
     Guid CampaignId,
     Guid? CompanyId,
+    string? CompanyName,
     string Stage,
     string Role,
+    MoneyView? Compensation,
+    string? Location,
     string? WorkMode,
+    string? Source,
     DateOnly AppliedDate,
     DateOnly? ApplicationDeadline,
     DateTimeOffset CreatedAt,
@@ -357,12 +361,23 @@ internal static class ApiClient
         Guid? customFieldId = null,
         string? customFieldValue = null,
         Guid? sortCustomFieldId = null,
-        string? sortDirection = null)
+        string? sortDirection = null,
+        string? sortBy = null,
+        params string[] stages)
     {
         var query = new List<string>();
         if (campaignId is { } campaign)
         {
             query.Add($"campaignId={campaign}");
+        }
+
+        // Repeated rather than joined: the endpoint reads one value per occurrence,
+        // which is what makes "any of these stages" a single request.
+        query.AddRange(stages.Select(stage => $"stage={Uri.EscapeDataString(stage)}"));
+
+        if (sortBy is not null)
+        {
+            query.Add($"sortBy={Uri.EscapeDataString(sortBy)}");
         }
 
         if (customFieldId is { } fieldId)

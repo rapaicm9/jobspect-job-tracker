@@ -63,6 +63,31 @@ internal static class PagingParameters
         return errors.ToResultOrNull();
     }
 
+    /// <summary>
+    /// The same check for a list that can be ordered several ways, where a cursor
+    /// carries the sort it was issued under (see <see cref="SortKeys.Tagged"/>).
+    /// All this settles is that the cursor <em>decodes</em>: whether it belongs to
+    /// the requested sort is a different answer for the client - a sort they
+    /// changed rather than a value they mangled - so the handler reports that as
+    /// <see cref="Domain.ApplicationErrors.SortCursorMismatch"/> instead.
+    /// </summary>
+    public static Dictionary<string, string[]>? Validate(int? limit, string? cursor)
+    {
+        var errors = new ValidationErrors();
+
+        if (limit is { } requested && (requested < 1 || requested > MaxLimit))
+        {
+            errors.Add("limit", $"The limit must be between 1 and {MaxLimit}.");
+        }
+
+        if (!string.IsNullOrEmpty(cursor) && Cursor.Decode(cursor) is null)
+        {
+            errors.Add("cursor", "The cursor is not valid. Use the nextCursor returned by a previous page.");
+        }
+
+        return errors.ToResultOrNull();
+    }
+
     /// <summary>The parameters as a handler wants them; trusts <see cref="Validate"/> has run.</summary>
     public static PageRequest From(int? limit, string? cursor) =>
         new(limit ?? DefaultLimit, Cursor.Decode(cursor));

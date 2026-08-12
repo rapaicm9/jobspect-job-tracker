@@ -147,3 +147,11 @@ jobs:
         # so this one command covers the production build, the axe sweep and the
         # token contrast assertions without booting a second browser.
         run: pnpm test:e2e
+
+      - name: Drive the auth flow end to end
+        # The one suite that needs Docker: a real Redis holds the session record,
+        # because a fake store would only assert the fake. The API beside it is a
+        # stand-in process, so this stays a fake HTTP boundary rather than the
+        # backend stack - one alpine container, not a topology. The runner ships
+        # the daemon the build job already uses for Testcontainers.
+        run: pnpm test:e2e:auth

@@ -4,26 +4,20 @@
  * Per-file rather than configured: Vitest 4 removed `environmentMatchGlobs`, and
  * everything else in this suite exercises server modules under Node.
  *
- * **Queries are async here, and have to be.** Testing Library wraps its mount in
- * `act`, which only flushes synchronously when React has been told it is under
- * test - and nothing sets that flag for us. The mount lands a macrotask later,
- * so `getBy*` sees an empty container and `findBy*` sees the real thing. Setting
- * the flag by hand makes React warn on every state update instead, which buys
- * noise rather than coverage.
- *
- * **`CredentialForm` is not here.** Its inputs and button come from Base UI,
- * which reads a null React dispatcher under Vitest: Vite hands it React through
- * a CommonJS interop proxy while the renderer holds the ES module instance, and
- * neither `resolve.dedupe` nor inlining the package reconciles them. The two
- * components below own the rules worth asserting, and the form's own wiring -
- * label association and a valid `aria-describedby` - is what axe checks on
- * /login and /register in the Playwright run.
+ * If every assertion here starts failing with `Invalid hook call`, the install
+ * has two copies of React and the primitives are holding the one the renderer is
+ * not. Compare what `node_modules/react` resolves to against the copy reached
+ * from inside `@base-ui/react` - on Windows a symlink written with the wrong
+ * directory casing resolves to a second module id for the same file - and
+ * reinstall.
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { CredentialForm } from "@/features/auth/components/credential-form";
 import { FieldErrors } from "@/features/auth/components/field-errors";
 import { SessionEndedNotice } from "@/features/auth/components/session-ended-notice";
+import { EMPTY_FORM_STATE, type AuthFormState } from "@/features/auth/form-state";
 
 // Explicit because Testing Library only registers its own cleanup when Vitest
 // runs with globals, which this project does not. Without it each render stacks
@@ -38,20 +32,20 @@ const PASSWORD_RULES = [
 ];
 
 describe("a field the API refused several times over", () => {
-  it("renders every message, not the first", async () => {
+  it("renders every message, not the first", () => {
     render(<FieldErrors id="password-errors" messages={PASSWORD_RULES} />);
 
     // The rule this component exists to hold. One sentence, or the first of
     // four, turns a single correction into four round trips.
-    expect(await screen.findAllByRole("listitem")).toHaveLength(PASSWORD_RULES.length);
+    expect(screen.getAllByRole("listitem")).toHaveLength(PASSWORD_RULES.length);
   });
 
-  it("carries the id the input points at", async () => {
+  it("carries the id the input points at", () => {
     render(<FieldErrors id="password-errors" messages={PASSWORD_RULES} />);
 
     // Without this the messages are read as loose text near the field rather
     // than as part of it.
-    expect((await screen.findByRole("list")).id).toBe("password-errors");
+    expect(screen.getByRole("list").id).toBe("password-errors");
   });
 });
 
@@ -66,20 +60,185 @@ describe("a field with nothing wrong", () => {
 });
 
 describe("the reason a session ended", () => {
-  it("says plainly when the account was signed out everywhere", async () => {
+  it("says plainly when the account was signed out everywhere", () => {
     render(<SessionEndedNotice reason="revoked" />);
 
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("signed out of every device");
+    expect(screen.getByRole("alert").textContent).toContain("signed out of every device");
   });
 
-  it("stays calm about an ordinary expiry", async () => {
+  it("stays calm about an ordinary expiry", () => {
     render(<SessionEndedNotice reason="expired" />);
 
-    const alert = await screen.findByRole("alert");
+    const alert = screen.getByRole("alert");
     // A routine expiry must not read like a security event, or the wording for
     // the one that is stops meaning anything.
     expect(alert.textContent).not.toContain("signed out of every device");
     expect(alert.textContent).toContain("sign in again");
+  });
+});
+
+const HINT = "At least 8 characters, with an uppercase letter, a lowercase letter and a symbol.";
+
+type Action = (state: AuthFormState, formData: FormData) => Promise<AuthFormState>;
+
+const inert: Action = () => Promise.resolve(EMPTY_FORM_STATE);
+
+/** Signing in: no hint, and the password manager should offer a stored secret. */
+function renderSignIn(action: Action = inert) {
+  return render(
+    <CredentialForm
+      action={action}
+      submitLabel="Sign in"
+      pendingLabel="Signing in…"
+      passwordAutoComplete="current-password"
+    />,
+  );
+}
+
+/** Registering: the policy is stated up front, so there is a hint to describe. */
+function renderRegister(action: Action = inert) {
+  return render(
+    <CredentialForm
+      action={action}
+      submitLabel="Create account"
+      pendingLabel="Creating account…"
+      passwordAutoComplete="new-password"
+      passwordHint={HINT}
+    />,
+  );
+}
+
+/** Every id in an `aria-describedby`, or an empty list when there is none. */
+function describedBy(field: HTMLElement): string[] {
+  const value = field.getAttribute("aria-describedby");
+  return value === null ? [] : value.split(" ").filter(Boolean);
+}
+
+function submit(name: string) {
+  fireEvent.click(screen.getByRole("button", { name }));
+}
+
+describe("the credential form as first rendered", () => {
+  it("associates both labels with their inputs", () => {
+    renderSignIn();
+
+    // `getByLabelText` resolves through the label, so it passing *is* the
+    // assertion: an unassociated label finds nothing.
+    expect(screen.getByLabelText("Email")).toBeTruthy();
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+  });
+
+  it("tells the password manager which secret this is", () => {
+    renderSignIn();
+
+    expect(screen.getByLabelText("Email").getAttribute("autocomplete")).toBe("email");
+    // The one prop that differs between the two pages. Offering a stored
+    // password on a registration form, or a new one on sign-in, is the failure.
+    expect(screen.getByLabelText("Password").getAttribute("autocomplete")).toBe("current-password");
+  });
+
+  it("uses the registration autocomplete when registering", () => {
+    renderRegister();
+
+    expect(screen.getByLabelText("Password").getAttribute("autocomplete")).toBe("new-password");
+  });
+
+  it("describes the password by its hint alone, and claims nothing is wrong", () => {
+    renderRegister();
+
+    const password = screen.getByLabelText("Password");
+    expect(describedBy(password)).toEqual(["password-hint"]);
+    expect(document.getElementById("password-hint")?.textContent).toBe(HINT);
+    expect(password.getAttribute("aria-invalid")).toBe("false");
+  });
+
+  it("describes nothing when there is no hint", () => {
+    renderSignIn();
+
+    expect(describedBy(screen.getByLabelText("Password"))).toEqual([]);
+  });
+});
+
+describe("a password the API refused", () => {
+  const refuses: Action = () =>
+    Promise.resolve({ fieldErrors: { password: PASSWORD_RULES }, formError: null });
+
+  it("keeps the hint and adds the errors, and both ids resolve", async () => {
+    renderRegister(refuses);
+    submit("Create account");
+
+    // Awaited because the action is a promise: the state arrives after it
+    // settles, however fast that is.
+    await screen.findByRole("list");
+
+    const password = screen.getByLabelText("Password");
+    const ids = describedBy(password);
+
+    // Both, in that order. Dropping the hint on the first refusal leaves the
+    // rules unreadable exactly when they are needed; dropping the errors makes
+    // the refusal silent to anyone not looking at the red text.
+    expect(ids).toEqual(["password-errors", "password-hint"]);
+
+    // The assertion that matters. A describedby naming an element that is not
+    // there is invisible to everyone except the person relying on it.
+    for (const id of ids) {
+      expect(document.getElementById(id), `#${id} is not in the document`).not.toBeNull();
+    }
+
+    expect(password.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByRole("listitem")).toHaveLength(PASSWORD_RULES.length);
+  });
+
+  it("leaves the email alone", async () => {
+    renderRegister(refuses);
+    submit("Create account");
+    await screen.findByRole("list");
+
+    // One refused field must not mark the other. `aria-invalid` on an untouched
+    // input sends a screen-reader user hunting for a problem that isn't there.
+    expect(screen.getByLabelText("Email").getAttribute("aria-invalid")).toBe("false");
+  });
+});
+
+describe("credentials that were simply wrong", () => {
+  const refuses: Action = () =>
+    Promise.resolve({ fieldErrors: {}, formError: "The email or password is incorrect." });
+
+  it("says so above the form and blames neither field", async () => {
+    renderSignIn(refuses);
+    submit("Sign in");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("email or password is incorrect");
+
+    // The API refuses to say which half was wrong so that nobody can discover
+    // which addresses have accounts. Marking a field would give that away on
+    // this side instead.
+    expect(screen.getByLabelText("Email").getAttribute("aria-invalid")).toBe("false");
+    expect(screen.getByLabelText("Password").getAttribute("aria-invalid")).toBe("false");
+  });
+});
+
+describe("the form in flight", () => {
+  it("disables the button and says what it is doing", async () => {
+    let finish: (state: AuthFormState) => void = () => undefined;
+    const pending = new Promise<AuthFormState>((resolve) => {
+      finish = resolve;
+    });
+
+    renderSignIn(() => pending);
+    submit("Sign in");
+
+    // A second submit while the first is in flight is a second registration or
+    // a second login attempt against a rate limit, so the button has to refuse.
+    // The DOM property rather than a matcher: this suite has no jest-dom, which
+    // would be a dependency for sugar over one property read.
+    const button = await screen.findByRole<HTMLButtonElement>("button", { name: "Signing in…" });
+    expect(button.disabled).toBe(true);
+
+    finish(EMPTY_FORM_STATE);
+
+    const settled = await screen.findByRole<HTMLButtonElement>("button", { name: "Sign in" });
+    expect(settled.disabled).toBe(false);
   });
 });

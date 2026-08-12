@@ -2,8 +2,9 @@ import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 // Every route that renders HTML and can be reached without an account. The
-// health endpoints serve text/plain and have nothing for axe to analyse, and
-// /applications redirects to /login until there is a way to sign in from a test.
+// health endpoints serve text/plain and have nothing for axe to analyse, and the
+// signed-in routes redirect to /login, so they are swept by e2e/auth/a11y.spec.ts
+// instead - which is where a browser with a session exists.
 // Add to this list as routes land; the point of wiring it now is that no route
 // ever arrives unchecked.
 const ROUTES = ["/", "/login", "/register"];

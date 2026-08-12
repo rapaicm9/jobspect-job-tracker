@@ -103,6 +103,80 @@ public sealed class OpenApiContractTests(ApiFixture fixture)
             + "string and parse it in the handler.");
     }
 
+    /// <summary>
+    /// The same rule for the other half of a request. A query parameter typed as an
+    /// enum fails in the binder too, and worse: the bare 400 names no parameter at
+    /// all, so a client cannot tell which of several it got wrong.
+    /// </summary>
+    [Fact]
+    public async Task No_query_parameter_is_constrained_to_an_enum()
+    {
+        using var document = JsonDocument.Parse(await ServedDocumentAsync("json"));
+
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var offenders = new SortedSet<string>(StringComparer.Ordinal);
+
+        foreach (var path in document.RootElement.GetProperty("paths").EnumerateObject())
+        {
+            foreach (var operation in path.Value.EnumerateObject())
+            {
+                if (!operation.Value.TryGetProperty("parameters", out var parameters))
+                {
+                    continue;
+                }
+
+                foreach (var parameter in parameters.EnumerateArray())
+                {
+                    CollectParameterEnums(schemas, path.Name, operation.Name, parameter, offenders);
+                }
+            }
+        }
+
+        offenders.ShouldBeEmpty(
+            "a query parameter is described as an enum, so an unknown value is refused by the model "
+            + "binder as a bare 400 naming nothing. Take it as a string and parse it in the endpoint.");
+    }
+
+    /// <summary>
+    /// One parameter, and whatever its schema reaches - an enum arrives either
+    /// inline or as a reference to a named one, and both bind the same way.
+    /// </summary>
+    private static void CollectParameterEnums(
+        JsonElement schemas,
+        string path,
+        string method,
+        JsonElement parameter,
+        SortedSet<string> offenders)
+    {
+        if (!parameter.TryGetProperty("schema", out var schema))
+        {
+            return;
+        }
+
+        var name = parameter.TryGetProperty("name", out var declared) ? declared.GetString() : "?";
+        var where = $"{method.ToUpperInvariant()} {path}?{name}";
+
+        if (schema.TryGetProperty("enum", out _))
+        {
+            offenders.Add(where);
+        }
+
+        // An array parameter carries its enum on the items, which is exactly the
+        // shape a repeatable one takes.
+        if (schema.TryGetProperty("items", out var items) && items.TryGetProperty("enum", out _))
+        {
+            offenders.Add(where);
+        }
+
+        foreach (var referenced in ReferencesOf(schema))
+        {
+            if (schemas.TryGetProperty(referenced, out var target) && target.TryGetProperty("enum", out _))
+            {
+                offenders.Add(where);
+            }
+        }
+    }
+
     /// <summary>The component schemas the operations name as their request bodies.</summary>
     private static IEnumerable<string> RequestSchemaNames(JsonElement root)
     {

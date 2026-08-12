@@ -575,9 +575,13 @@ export interface components {
             campaignId: string;
             /** Format: uuid */
             companyId: null | string;
+            companyName: null | string;
             stage: components["schemas"]["Stage"];
             role: string;
+            compensation: null | components["schemas"]["MoneyResponse"];
+            location: null | string;
             workMode: null | components["schemas"]["WorkMode"];
+            source: null | string;
             /** Format: date */
             appliedDate: string;
             /** Format: date */
@@ -1683,8 +1687,10 @@ export interface operations {
         parameters: {
             query?: {
                 campaignId?: string;
+                stage?: string[];
                 customFieldId?: string;
                 customFieldValue?: string;
+                sortBy?: string;
                 sortCustomFieldId?: string;
                 sortDirection?: string;
                 limit?: number;

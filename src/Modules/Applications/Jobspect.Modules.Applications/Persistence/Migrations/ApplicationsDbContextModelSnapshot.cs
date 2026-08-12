@@ -267,6 +267,9 @@ namespace Jobspect.Modules.Applications.Persistence.Migrations
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("CustomFieldValues"), "gin");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("CustomFieldValues"), new[] { "jsonb_path_ops" });
 
+                    b.HasIndex("OwnerId", "ApplicationDeadline", "Id")
+                        .HasDatabaseName("ix_applications_owner_id_application_deadline_id");
+
                     b.HasIndex("OwnerId", "AppliedDate", "Id")
                         .HasDatabaseName("ix_applications_owner_id_applied_date_id");
 

@@ -112,6 +112,10 @@ export function proxy(request: NextRequest) {
   // that owns response headers, and it needs to know nothing about the session
   // to do it. A cookie outliving its record costs nothing: the lookup misses and
   // the user signs in.
+  //
+  // Safe on a Server Action's request too, which this also runs on: response
+  // cookies are keyed by name and the action writes after this, so a sign-out
+  // clearing the cookie is never undone by the re-stamp.
   if (sid !== undefined) {
     response.cookies.set(SESSION_COOKIE, sid, {
       ...SESSION_COOKIE_ATTRIBUTES,
@@ -127,5 +131,25 @@ export const config = {
   // the image optimizer are served thousands of times per session and gain
   // nothing from a header pass; the health probes answer text/plain and are
   // polled by a container runtime that does not care.
-  matcher: ["/((?!_next/static|_next/image|health/|favicon.ico|.*\\.woff2$).*)"],
+  //
+  // Prefetches are excluded on top of that. A <Link> in the shell fetches every
+  // destination the user can see, and none of that work needs a nonce, a
+  // security header on a payload that is not a document, or a cookie re-stamped
+  // by a request the user did not make. The redirect it also skips was never the
+  // check - the page's own requireSession() is.
+  //
+  // It has to be expressed here rather than as an early return, because Next
+  // strips `rsc`, `next-router-state-tree` and `next-router-prefetch` from the
+  // request inside a proxy on purpose, so that an RSC request cannot be handled
+  // differently from the HTML one. Reading the header in the function always
+  // finds nothing; the matcher is evaluated before the stripping.
+  matcher: [
+    {
+      source: "/((?!_next/static|_next/image|health/|favicon.ico|.*\\.woff2$).*)",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+  ],
 };

@@ -1,33 +1,59 @@
 import type { Metadata } from "next";
 
-import { logout } from "@/features/auth";
-import { getAccount, requireSession } from "@/server/dal";
-import { Button } from "@/ui/button";
+import {
+  applicationsSearchParams,
+  ApplicationsBrowser,
+  listFirstPage,
+  readViewPreferences,
+  ViewPreferencesForm,
+} from "@/features/applications";
+import { STAGES } from "@/server/api/enums";
 
 export const metadata: Metadata = { title: "Applications — Jobspect" };
 
-// A placeholder, and the first page in the product that requires a session. The
-// dense table and everything around it arrive with the next sprint; what this
-// carries until then is proof that the session layer works end to end - the
-// cookie resolves, the token refreshes under lock, and the API answers to it.
-export default async function ApplicationsPage() {
-  await requireSession();
-  const account = await getAccount();
+export default async function ApplicationsPage({ searchParams }: PageProps<"/applications">) {
+  // Parsed here and nowhere else: the cache is what lets a Server Component
+  // below this one read the same filters without threading them through, and it
+  // is only populated by this call.
+  const filters = await applicationsSearchParams.parse(searchParams);
+
+  const [initialPage, preferences] = await Promise.all([
+    listFirstPage(filters),
+    readViewPreferences(),
+  ]);
+
+  const empty = initialPage.rows.length === 0 && filters.stage.length === 0;
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center gap-6 px-6 py-16">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Applications</h1>
-        <p className="text-sm text-muted-foreground">
-          Signed in as {account?.email ?? "an unknown account"}.
-        </p>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Applications</h1>
+          {/* No count, here or anywhere. The API returns none by design, and a
+              count of the rows that happen to be loaded reads as a total. */}
+          <p className="text-sm text-muted-foreground">Every application you have recorded.</p>
+        </div>
+
+        {!empty && <ViewPreferencesForm preferences={preferences} />}
       </div>
 
-      <form action={logout}>
-        <Button type="submit" variant="outline">
-          Sign out
-        </Button>
-      </form>
-    </main>
+      {empty ? (
+        <div className="rounded-lg border border-dashed border-border px-6 py-12 text-center">
+          <p className="font-medium text-foreground">No applications yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            The ones you record will appear here, with their stage, dates and source.
+          </p>
+        </div>
+      ) : (
+        <ApplicationsBrowser
+          filters={filters}
+          preferences={preferences}
+          // The union lives behind `server-only`, so the client is handed it
+          // rather than importing it.
+          stages={STAGES}
+          initialPage={initialPage}
+        />
+      )}
+    </div>
   );
 }
