@@ -136,6 +136,17 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.Redis" Version="4.13.0" />
+    <!--
+      Transitive, via Testcontainers, which asks for SSH.NET 2025.1.0 - the last
+      version carrying GHSA-q939-rpr3-3284, so NuGetAudit raises NU1903 and
+      TreatWarningsAsErrors turns a restore into a failed build. No Testcontainers
+      release has moved off it, so pin the patched 2026.0.0 and let transitive
+      pinning apply it to the graph. Still MIT. The flaw is in recursive
+      ScpClient downloads, which the local-daemon container flow never reaches;
+      this clears the advisory rather than a live exposure, and the pin comes out
+      when Testcontainers ships its own bump.
+    -->
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
 
 </Project>
