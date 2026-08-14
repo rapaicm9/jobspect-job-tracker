@@ -75,6 +75,11 @@ public sealed class CreateApplicationEndpointTests(ApiFixture fixture)
 
         created.Role.ShouldBe("Staff Backend Engineer");
         created.CompanyId.ShouldNotBeNull();
+
+        // Named as well as identified: company search is a type-ahead with a
+        // minimum term and a result cap, so a client holding only the id cannot
+        // turn it into a name.
+        created.CompanyName.ShouldBe("Acme Corp");
         created.Compensation.ShouldBe(new MoneyView(120_000.50m, "EUR")); // currency normalised to upper case
         created.Location.ShouldBe("Belgrade");
         created.WorkMode.ShouldBe("Remote");
@@ -119,6 +124,11 @@ public sealed class CreateApplicationEndpointTests(ApiFixture fixture)
 
         // Case-insensitive exact match: the same company, not a duplicate.
         second.CompanyId.ShouldBe(first.CompanyId);
+
+        // And answered with the name as recorded rather than as typed. Echoing the
+        // request would look right on this response and disagree with every read
+        // of the same application afterwards.
+        second.CompanyName.ShouldBe("Globex");
         (await (await _client.SearchCompaniesAsync(tokens.AccessToken, "globex")).ReadCompaniesAsync())
             .Count.ShouldBe(1);
     }
@@ -134,6 +144,21 @@ public sealed class CreateApplicationEndpointTests(ApiFixture fixture)
             tokens.AccessToken, new { role = "Senior Engineer", companyId = seeded.CompanyId })).ReadApplicationAsync();
 
         referencing.CompanyId.ShouldBe(seeded.CompanyId);
+        referencing.CompanyName.ShouldBe("Initech");
+    }
+
+    [Fact]
+    public async Task Answers_with_no_company_name_when_the_application_names_none()
+    {
+        var tokens = await fixture.RegisterWithDefaultCampaignAsync(_client, Ct);
+
+        var created = await (await _client.CreateApplicationAsync(
+            tokens.AccessToken, new { role = "Backend Engineer" })).ReadApplicationAsync();
+
+        // Null rather than an empty string: an application without a company has
+        // no name to show, and a client renders nothing rather than a blank.
+        created.CompanyId.ShouldBeNull();
+        created.CompanyName.ShouldBeNull();
     }
 
     [Fact]

@@ -16,7 +16,8 @@ namespace Jobspect.Modules.Applications.Features.TransitionApplication;
 /// and the events it owes other modules commit together, keeping the timeline
 /// honest and the announcement inseparable from the fact.
 /// </summary>
-internal sealed class TransitionApplicationHandler(ApplicationsDbContext dbContext, TimeProvider timeProvider)
+internal sealed class TransitionApplicationHandler(
+    ApplicationsDbContext dbContext, CompanyNameLookup companyNames, TimeProvider timeProvider)
 {
     public async Task<Result<ApplicationResponse>> HandleAsync(
         UserId ownerId, Guid id, Stage target, CancellationToken cancellationToken)
@@ -44,7 +45,12 @@ internal sealed class TransitionApplicationHandler(ApplicationsDbContext dbConte
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return application.ToResponse();
+        // A move says nothing about the company, and the response still carries
+        // its name: the client replaces what it holds with what comes back, so a
+        // name left out here would disappear from the screen on every transition.
+        var companyName = await companyNames.ForAsync(ownerId, application.CompanyId, cancellationToken);
+
+        return application.ToResponse(companyName);
     }
 
     /// <summary>

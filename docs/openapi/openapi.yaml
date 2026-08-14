@@ -2425,6 +2425,7 @@ components:
         - id
         - campaignId
         - companyId
+        - companyName
         - stage
         - role
         - compensation
@@ -2453,6 +2454,10 @@ components:
             - 'null'
             - string
           format: uuid
+        companyName:
+          type:
+            - 'null'
+            - string
         stage:
           $ref: '#/components/schemas/Stage'
         role:

@@ -8,7 +8,8 @@ namespace Jobspect.IntegrationTests;
 /// <c>GET /api/v1/applications/{id}</c> against a real database: ownership is the
 /// query, so another user's application - or one that never existed - is a 404,
 /// never a 403 that would confirm it exists. The happy read is covered by the
-/// create round-trip; this pins the boundaries.
+/// create round-trip; this pins the boundaries, and the company name, which this
+/// handler resolves for itself rather than receiving from a request.
 /// </summary>
 [Collection(ApiCollection.Name)]
 public sealed class GetApplicationEndpointTests(ApiFixture fixture)
@@ -16,6 +17,37 @@ public sealed class GetApplicationEndpointTests(ApiFixture fixture)
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private readonly HttpClient _client = fixture.CreateClient();
+
+    [Fact]
+    public async Task Carries_the_name_of_the_company_applied_to()
+    {
+        var tokens = await fixture.RegisterWithDefaultCampaignAsync(_client, Ct);
+        var created = await (await _client.CreateApplicationAsync(
+            tokens.AccessToken, new { role = "Backend Engineer", companyName = "Acme Corp" }))
+            .ReadApplicationAsync();
+
+        var fetched = await (await _client.GetApplicationAsync(tokens.AccessToken, created.Id))
+            .ReadApplicationAsync();
+
+        // Read rather than carried through from the request that set it: nothing
+        // about this call names a company, and the client cannot resolve the id
+        // itself.
+        fetched.CompanyId.ShouldBe(created.CompanyId);
+        fetched.CompanyName.ShouldBe("Acme Corp");
+    }
+
+    [Fact]
+    public async Task Carries_no_company_name_when_the_application_names_no_company()
+    {
+        var tokens = await fixture.RegisterWithDefaultCampaignAsync(_client, Ct);
+        var created = await (await _client.CreateApplicationAsync(
+            tokens.AccessToken, new { role = "Backend Engineer" })).ReadApplicationAsync();
+
+        var fetched = await (await _client.GetApplicationAsync(tokens.AccessToken, created.Id))
+            .ReadApplicationAsync();
+
+        fetched.CompanyName.ShouldBeNull();
+    }
 
     [Fact]
     public async Task Returns_404_for_another_users_application()

@@ -47,6 +47,10 @@ public sealed class UpdateApplicationEndpointTests(ApiFixture fixture)
 
         updated.Role.ShouldBe("Staff Backend Engineer");
         updated.CompanyId.ShouldNotBeNull();
+
+        // A company this edit created is named in the same response, without the
+        // client having to read the application back to find out what it made.
+        updated.CompanyName.ShouldBe("Acme Corp");
         updated.Compensation.ShouldBe(new MoneyView(150_000m, "USD"));
         updated.Location.ShouldBe("Remote");
         updated.WorkMode.ShouldBe("Remote");

@@ -28,6 +28,7 @@ internal sealed record ApplicationResponse(
     Guid Id,
     Guid CampaignId,
     Guid? CompanyId,
+    string? CompanyName,
     Stage Stage,
     string Role,
     MoneyResponse? Compensation,
@@ -46,10 +47,19 @@ internal sealed record ApplicationResponse(
 
 internal static class ApplicationResponseMapping
 {
-    public static ApplicationResponse ToResponse(this Application application) => new(
+    /// <summary>
+    /// The company name arrives from the caller rather than from a navigation
+    /// property, the way <see cref="ApplicationSummaryMapping.ToSummary"/> takes
+    /// it: a write already knows which company it resolved, and a read fetches
+    /// the one name it needs. There is no parameterless overload on purpose -
+    /// every caller has to say what the name is rather than default it to null.
+    /// </summary>
+    public static ApplicationResponse ToResponse(
+        this Application application, string? companyName) => new(
         application.Id,
         application.CampaignId,
         application.CompanyId,
+        companyName,
         application.Stage,
         application.Role,
         application.Compensation is { } money ? new MoneyResponse(money.Amount, money.Currency) : null,

@@ -547,6 +547,7 @@ export interface components {
             campaignId: string;
             /** Format: uuid */
             companyId: null | string;
+            companyName: null | string;
             stage: components["schemas"]["Stage"];
             role: string;
             compensation: null | components["schemas"]["MoneyResponse"];
