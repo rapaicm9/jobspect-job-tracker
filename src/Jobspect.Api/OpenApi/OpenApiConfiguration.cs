@@ -41,5 +41,6 @@ internal static class OpenApiConfiguration
         options.Document.AddDocumentTransformer(problems);
         options.Document.AddOperationTransformer(problems);
         options.Document.AddSchemaTransformer(new EnumSchemaTransformer());
+        options.Document.AddSchemaTransformer(new DictionarySchemaTransformer());
     }
 }

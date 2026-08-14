@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-05
-- **Amended:** 2026-08-07 — the document now describes its enums, its failures and its operation ids. See *Revision history*.
+- **Amended:** 2026-08-14 — the document now says what a dictionary may hold. See *Revision history*.
 
 ## Context
 
@@ -29,6 +29,10 @@ The description is generated from a live endpoint graph. That is the property th
 - **Enums are described as their members, on the way out only.** Responses carry the enum types themselves and a string-enum converter writes their names — which is what they always were on the wire, since the responses previously stringified them by hand. The difference is that the description can now state the member set instead of an unconstrained string, so a client stops carrying its own copy of the vocabulary. No naming policy, so the names travel verbatim.
 
   **Requests keep every such field as a string**, and this is the rule rather than an oversight. An enum-typed request property hands the refusal of an unknown value to the model binder, which answers a bare 400 naming no field, in place of the field-keyed 422 every other bad value in this API gets. The handlers parse leniently and their validators key the failure to the property. A test over the document holds the rule, because since the responses gained real enums the mistake no longer shows up as integers on the wire — it works, and only the refusal degrades.
+
+- **Every object says what it may hold.** The schema mapper describes a dictionary's values only when its key is a `string`, so the custom-field bag — keyed by definition id — came out as an object stating nothing about its contents. As JSON Schema that omission is permissive; to a generator it is the opposite, and the bag arrived in a client as a map admitting no keys at all, needing a cast at both ends of the one payload custom fields exist for. A schema transformer fills it in from the dictionary's value type, and a test over the document holds the rule for the next one.
+
+  The rule is stated about the mapper's limitation rather than about the schemas that carry a bag today, for the same reason the failures are derived rather than annotated: a list of three names is a list that stops being true. Where the values are raw JSON the schema stays empty, and deliberately — a custom-field answer is whatever its definition calls for, and nothing short of that definition says which. Nothing on the wire changed: those keys always serialised as strings.
 
 - **The failures are described, and derived rather than annotated.** Every endpoint returns a `TypedResults` union ending in a bare problem result, which carries no status, so the generator reported none — leaving a generated client with an error branch typed as nothing at all, against an API whose entire error protocol is a stable `code` in the body. Two schemas are registered once: the RFC 9457 members plus the `code` and `traceId` this host adds to all of them, and the same again with the field-keyed `errors` a 422 may carry instead of a code. One schema for 422 rather than a choice between two, because a client has to read whichever member is present anyway.
 
@@ -68,6 +72,11 @@ The description is generated from a live endpoint graph. That is the property th
 
 ## Revision history
 
+- **2026-08-14 — the document says what a dictionary may hold.** Found by writing the screen that reads custom fields: the three schemas carrying the bag described it as a bare object, and `openapi-typescript` renders that a map that admits no keys, so the generated client could express neither an answer read back nor one being written. The cause is narrow and worth recording, because it will recur — the schema mapper only describes a dictionary's values when the key is a `string`, and this one is keyed by definition id.
+
+  What needed deciding was where to state the rule. Naming the three schemas would have been the smaller change and the wrong one, for the reason already recorded a paragraph above about `ProducesProblem`: a hard-coded list of carriers is a list that quietly stops being true when a fourth arrives. So the transformer matches on the mapper's own limitation and the test asserts the property the whole document should have, which is what makes the next Guid-keyed dictionary somebody else's red build rather than somebody else's cast.
+
+  Nothing about provenance, the gate or the codegen choice changed, and neither did the payload — the fix is entirely about what the document hands a generator. The one narrowing is that a dictionary with a typed value now describes that value, where before it described nothing.
 - **2026-08-07 — the document describes its enums, its failures and its operation ids.** The contract froze before the first client was written, and reading it as that client's author found three things it did not say. It carried no `enum:` anywhere, so the eleven vocabularies existed only in C# and a client would have had to be handed a copy of each. It described no failure at all — every operation listed its success and stopped — which for a generated client means an error branch typed as nothing, on an API where a stable `code` in the body *is* the error protocol. And it carried no `operationId`, which the web client does not need and the mobile one will.
 
   What needed deciding, and is recorded above, is not that these should be described but where the line falls. On enums: responses only, because typing a request property as an enum moves the refusal from a validator to the model binder and turns a field-keyed 422 into a bare 400. On failures: derived from endpoint metadata rather than annotated per endpoint, and therefore describing what an endpoint's shape implies rather than what its subject matter does — a distinction the *Consequences* now state as a limit. On ids: hand-chosen, because an id derived from the path churns when the path churns, which is the churn an id exists to absorb.

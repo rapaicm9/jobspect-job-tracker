@@ -563,7 +563,9 @@ export interface components {
             offerDecisionDeadline: null | string;
             cvLabel: null | string;
             coverLetterLabel: null | string;
-            customFields: Record<string, never>;
+            customFields: {
+                [key: string]: unknown;
+            };
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -670,7 +672,9 @@ export interface components {
             applicationDeadline: null | string;
             cvLabel: null | string;
             coverLetterLabel: null | string;
-            customFields: null | Record<string, never>;
+            customFields: null | {
+                [key: string]: unknown;
+            };
         };
         CreateCampaignRequest: {
             name: null | string;
@@ -960,7 +964,9 @@ export interface components {
             offerDecisionDeadline: null | string;
             cvLabel: null | string;
             coverLetterLabel: null | string;
-            customFields: null | Record<string, never>;
+            customFields: null | {
+                [key: string]: unknown;
+            };
         };
         UpdateCampaignRequest: {
             name: null | string;

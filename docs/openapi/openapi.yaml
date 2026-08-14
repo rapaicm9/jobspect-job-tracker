@@ -2505,6 +2505,7 @@ components:
             - string
         customFields:
           type: object
+          additionalProperties: { }
         createdAt:
           type: string
           format: date-time
@@ -2821,6 +2822,7 @@ components:
           type:
             - 'null'
             - object
+          additionalProperties: { }
     CreateCampaignRequest:
       required:
         - name
@@ -3623,6 +3625,7 @@ components:
           type:
             - 'null'
             - object
+          additionalProperties: { }
     UpdateCampaignRequest:
       required:
         - name
