@@ -21,13 +21,25 @@ import type { components } from "../../src/server/api/schema";
 
 type AuthTokensResponse = components["schemas"]["AuthTokensResponse"];
 type AccountResponse = components["schemas"]["AccountResponse"];
+type ApplicationResponse = components["schemas"]["ApplicationResponse"];
 type ApplicationSummaryResponse = components["schemas"]["ApplicationSummaryResponse"];
 type CampaignResponse = components["schemas"]["CampaignResponse"];
+type ContactResponse = components["schemas"]["ContactResponse"];
+type CustomFieldResponse = components["schemas"]["CustomFieldResponse"];
+type InterviewResponse = components["schemas"]["InterviewResponse"];
 type ApplicationPage = components["schemas"]["PagedResponseOfApplicationSummaryResponse"];
+type ContactPage = components["schemas"]["PagedResponseOfContactResponse"];
+type InterviewPage = components["schemas"]["PagedResponseOfInterviewResponse"];
 type RegisterRequest = components["schemas"]["RegisterRequest"];
 type LoginRequest = components["schemas"]["LoginRequest"];
 type RefreshRequest = components["schemas"]["RefreshRequest"];
 type LogoutRequest = components["schemas"]["LogoutRequest"];
+
+/** The reads the detail screen degrades one panel over rather than failing on. */
+type ContextRead = "custom-fields" | "contacts" | "interviews";
+
+const APPLICATION_PATH = /^\/api\/v1\/applications\/([^/]+)$/;
+const INTERVIEWS_PATH = /^\/api\/v1\/applications\/([^/]+)\/interviews$/;
 
 // An hour, so nothing in the suite crosses the 60s refresh skew by accident. A
 // spec that wants a rotation should ask for one rather than wait for one.
@@ -55,7 +67,28 @@ const refreshTokens = new Map<string, RefreshTokenRecord>();
 
 // Keyed by account so two specs running at once cannot read each other's rows,
 // which is what lets the suite stay fully parallel against one process.
-const applications = new Map<string, ApplicationSummaryResponse[]>();
+//
+// Whole applications rather than the summaries the list reads: the detail screen
+// wants the fields the summary leaves out, and deriving the summary from the
+// application keeps one seed answering both reads.
+const applications = new Map<string, ApplicationResponse[]>();
+
+const customFields = new Map<string, CustomFieldResponse[]>();
+const contacts = new Map<string, ContactResponse[]>();
+const interviews = new Map<string, InterviewResponse[]>();
+
+/**
+ * Which context reads answer 500 for this account, armed by a test seam.
+ *
+ * Keyed by account for the reason the cursor arming is: the suite runs its specs
+ * in parallel against one process, and a single flag here is one another spec's
+ * page load can spend first.
+ */
+const failingReads = new Map<string, Set<ContextRead>>();
+
+function isFailing(userId: string, read: ContextRead): boolean {
+  return failingReads.get(userId)?.has(read) ?? false;
+}
 
 /** Counted so a spec can assert the first page is not fetched twice. */
 const listCalls = new Map<string, number>();
@@ -178,6 +211,12 @@ function bearerOf(request: IncomingMessage): string | null {
   return header.slice("Bearer ".length);
 }
 
+/** Whose request this is, or undefined for a token the fake has never issued. */
+function callerId(request: IncomingMessage): string | undefined {
+  const token = bearerOf(request);
+  return token === null ? undefined : accessTokens.get(token);
+}
+
 /**
  * Fills in everything a spec did not care to state.
  *
@@ -185,7 +224,7 @@ function bearerOf(request: IncomingMessage): string | null {
  * rest be plausible - which keeps the interesting values visible in the spec
  * rather than buried in a full DTO literal.
  */
-function anApplication(seed: Partial<ApplicationSummaryResponse>): ApplicationSummaryResponse {
+function anApplication(seed: Partial<ApplicationResponse>): ApplicationResponse {
   return {
     id: randomUUID(),
     campaignId: randomUUID(),
@@ -196,9 +235,83 @@ function anApplication(seed: Partial<ApplicationSummaryResponse>): ApplicationSu
     compensation: null,
     location: null,
     workMode: null,
+    postingUrl: null,
     source: null,
     appliedDate: "2026-08-01",
     applicationDeadline: null,
+    offerDecisionDeadline: null,
+    cvLabel: null,
+    coverLetterLabel: null,
+    customFields: {},
+    createdAt: new Date().toISOString(),
+    updatedAt: null,
+    ...seed,
+  };
+}
+
+/**
+ * The list's read model, which is the detail's minus the fields only it shows.
+ *
+ * Written out rather than destructured down to it, so the compiler names any
+ * column the summary grows instead of a spread quietly forwarding it.
+ */
+function toSummary(application: ApplicationResponse): ApplicationSummaryResponse {
+  return {
+    id: application.id,
+    campaignId: application.campaignId,
+    companyId: application.companyId,
+    companyName: application.companyName,
+    stage: application.stage,
+    role: application.role,
+    compensation: application.compensation,
+    location: application.location,
+    workMode: application.workMode,
+    source: application.source,
+    appliedDate: application.appliedDate,
+    applicationDeadline: application.applicationDeadline,
+    createdAt: application.createdAt,
+    updatedAt: application.updatedAt,
+  };
+}
+
+function aCustomField(seed: Partial<CustomFieldResponse>): CustomFieldResponse {
+  return {
+    id: randomUUID(),
+    label: "Field",
+    type: "Text",
+    options: [],
+    isArchived: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: null,
+    ...seed,
+  };
+}
+
+function aContact(applicationId: string, seed: Partial<ContactResponse>): ContactResponse {
+  return {
+    id: randomUUID(),
+    applicationId,
+    companyId: null,
+    name: "Contact",
+    role: null,
+    email: null,
+    phone: null,
+    notes: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: null,
+    ...seed,
+  };
+}
+
+function anInterview(applicationId: string, seed: Partial<InterviewResponse>): InterviewResponse {
+  return {
+    id: randomUUID(),
+    applicationId,
+    scheduledAt: "2026-08-20T09:00:00Z",
+    type: "PhoneScreen",
+    format: "Remote",
+    outcome: "Pending",
+    notes: null,
     createdAt: new Date().toISOString(),
     updatedAt: null,
     ...seed,
@@ -225,8 +338,8 @@ function decodeCursor(cursor: string): { sort: string; offset: number } | null {
 }
 
 function compareApplications(
-  a: ApplicationSummaryResponse,
-  b: ApplicationSummaryResponse,
+  a: ApplicationResponse,
+  b: ApplicationResponse,
   sortBy: string,
   descending: boolean,
 ): number {
@@ -269,14 +382,20 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   // Seeds an account without driving the register form, so a spec about signing
   // in is not also a spec about signing up.
   if (method === "POST" && path === "/__test/accounts") {
-    const body = await readJson<{ email: string; password: string }>(request);
+    const body = await readJson<{
+      email: string;
+      password: string;
+      // Named by a spec that asserts an instant renders in the account's zone
+      // rather than the runner's; every other spec leaves it to the default.
+      timeZoneId?: string;
+    }>(request);
 
     if (body === null || accounts.has(accountKey(body.email))) {
       sendProblem(response, 409, "registration.email_taken", "That account already exists.");
       return;
     }
 
-    const account = createAccount(body.email, body.password, null);
+    const account = createAccount(body.email, body.password, body.timeZoneId ?? null);
     send(response, 201, { userId: account.userId });
     return;
   }
@@ -287,7 +406,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   if (method === "POST" && path === "/__test/applications") {
     const body = await readJson<{
       email: string;
-      applications: Partial<ApplicationSummaryResponse>[];
+      applications: Partial<ApplicationResponse>[];
     }>(request);
     const account = accounts.get(accountKey(body?.email ?? ""));
 
@@ -298,6 +417,82 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
     applications.set(account.userId, body.applications.map(anApplication));
     send(response, 201, { count: body.applications.length });
+    return;
+  }
+
+  // The account's field definitions. A spec names their ids so it can key
+  // answers to them in the application seed; the fake fills in the rest.
+  if (method === "POST" && path === "/__test/custom-fields") {
+    const body = await readJson<{ email: string; fields: Partial<CustomFieldResponse>[] }>(request);
+    const account = accounts.get(accountKey(body?.email ?? ""));
+
+    if (body === null || account === undefined) {
+      sendProblem(response, 404, "account.not_found", "Seed an account before its custom fields.");
+      return;
+    }
+
+    customFields.set(account.userId, body.fields.map(aCustomField));
+    send(response, 201, { count: body.fields.length });
+    return;
+  }
+
+  if (method === "POST" && path === "/__test/contacts") {
+    const body = await readJson<{
+      email: string;
+      applicationId: string;
+      contacts: Partial<ContactResponse>[];
+    }>(request);
+    const account = accounts.get(accountKey(body?.email ?? ""));
+
+    if (body === null || account === undefined) {
+      sendProblem(response, 404, "account.not_found", "Seed an account before its contacts.");
+      return;
+    }
+
+    contacts.set(
+      account.userId,
+      body.contacts.map((seed) => aContact(body.applicationId, seed)),
+    );
+    send(response, 201, { count: body.contacts.length });
+    return;
+  }
+
+  if (method === "POST" && path === "/__test/interviews") {
+    const body = await readJson<{
+      email: string;
+      applicationId: string;
+      interviews: Partial<InterviewResponse>[];
+    }>(request);
+    const account = accounts.get(accountKey(body?.email ?? ""));
+
+    if (body === null || account === undefined) {
+      sendProblem(response, 404, "account.not_found", "Seed an account before its interviews.");
+      return;
+    }
+
+    interviews.set(
+      account.userId,
+      body.interviews.map((seed) => anInterview(body.applicationId, seed)),
+    );
+    send(response, 201, { count: body.interviews.length });
+    return;
+  }
+
+  // Makes one of the detail screen's context reads fail, so the panel that
+  // degrades can be told apart from the page that does not. Armed for the whole
+  // spec rather than one request: the assertion is about what the screen shows,
+  // and a reload should show the same thing.
+  if (method === "POST" && path === "/__test/fail-reads") {
+    const body = await readJson<{ email: string; reads: ContextRead[] }>(request);
+    const account = accounts.get(accountKey(body?.email ?? ""));
+
+    if (body === null || account === undefined) {
+      sendProblem(response, 404, "account.not_found", "Name the account to fail reads for.");
+      return;
+    }
+
+    failingReads.set(account.userId, new Set(body.reads));
+    send(response, 204, undefined);
     return;
   }
 
@@ -423,11 +618,97 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     const next = offset + items.length;
 
     send(response, 200, {
-      items,
+      items: items.map(toSummary),
       // Null is the only stop signal the client reads, so it has to be null at
       // the end rather than a cursor pointing past the last row.
       nextCursor: next < all.length ? encodeCursor(sortTag(sortBy, descending), next) : null,
     } satisfies ApplicationPage);
+    return;
+  }
+
+  const interviewsMatch = INTERVIEWS_PATH.exec(path);
+  if (method === "GET" && interviewsMatch !== null) {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    if (isFailing(userId, "interviews")) {
+      sendProblem(response, 500, "internal", "The interviews read is armed to fail.");
+      return;
+    }
+
+    // Ascending by scheduled instant, as the real handler orders them. A panel
+    // that had to sort what it was given would be papering over the endpoint.
+    const items = (interviews.get(userId) ?? [])
+      .filter((interview) => interview.applicationId === interviewsMatch[1])
+      .sort((a, b) => (a.scheduledAt < b.scheduledAt ? -1 : 1));
+
+    send(response, 200, { items, nextCursor: null } satisfies InterviewPage);
+    return;
+  }
+
+  const applicationMatch = APPLICATION_PATH.exec(path);
+  if (method === "GET" && applicationMatch !== null) {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    const found = (applications.get(userId) ?? []).find(
+      (application) => application.id === applicationMatch[1],
+    );
+
+    if (found === undefined) {
+      // The same answer another account's application gets, which is the whole
+      // point: absent and forbidden are indistinguishable from out here.
+      sendProblem(response, 404, "application.not_found", "No such application for this account.");
+      return;
+    }
+
+    send(response, 200, found satisfies ApplicationResponse);
+    return;
+  }
+
+  if (method === "GET" && path === "/api/v1/custom-fields") {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    if (isFailing(userId, "custom-fields")) {
+      sendProblem(response, 500, "internal", "The custom-fields read is armed to fail.");
+      return;
+    }
+
+    // A bare array rather than the paged envelope, and ungated: defining a field
+    // is the paid capability, reading the definitions back is not.
+    send(response, 200, (customFields.get(userId) ?? []) satisfies CustomFieldResponse[]);
+    return;
+  }
+
+  if (method === "GET" && path === "/api/v1/contacts") {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    if (isFailing(userId, "contacts")) {
+      sendProblem(response, 500, "internal", "The contacts read is armed to fail.");
+      return;
+    }
+
+    const applicationId = new URL(url, "http://fake-api.test").searchParams.get("applicationId");
+
+    const items = (contacts.get(userId) ?? [])
+      .filter((contact) => applicationId === null || contact.applicationId === applicationId)
+      .sort((a, b) => (a.name < b.name ? -1 : 1));
+
+    send(response, 200, { items, nextCursor: null } satisfies ContactPage);
     return;
   }
 

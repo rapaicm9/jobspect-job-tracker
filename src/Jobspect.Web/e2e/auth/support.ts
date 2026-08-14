@@ -151,13 +151,84 @@ export async function openPalette(page: Page): Promise<void> {
   await expect(page.getByPlaceholder("Go to a screen or switch campaign")).toBeVisible();
 }
 
-/** Seeds an account straight into the fake API, bypassing the register form. */
-export async function seedAccount(email: string): Promise<void> {
+/**
+ * Seeds an account straight into the fake API, bypassing the register form.
+ *
+ * The zone is worth naming when a spec asserts how an instant reads: the form
+ * sends none and the API defaults it, so an account registered through the UI is
+ * always UTC and an assertion against it would pass however the instant was
+ * formatted.
+ */
+export async function seedAccount(email: string, timeZoneId?: string): Promise<void> {
   const response = await fetch(`${FAKE_API_ORIGIN}/__test/accounts`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password: PASSWORD }),
+    body: JSON.stringify({ email, password: PASSWORD, timeZoneId }),
   });
 
   expect(response.status, "the fake API seeded the account").toBe(201);
+}
+
+/**
+ * Seeds the account's field definitions.
+ *
+ * A spec states their ids so it can key answers to them in the application seed:
+ * the bag on an application is keyed by definition id, and a generated id could
+ * not be referred to from the same literal.
+ */
+export async function seedCustomFields(
+  email: string,
+  fields: Record<string, unknown>[],
+): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/custom-fields`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, fields }),
+  });
+
+  expect(response.status, "the fake API seeded the custom fields").toBe(201);
+}
+
+export async function seedContacts(
+  email: string,
+  applicationId: string,
+  contacts: Record<string, unknown>[],
+): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/contacts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, applicationId, contacts }),
+  });
+
+  expect(response.status, "the fake API seeded the contacts").toBe(201);
+}
+
+export async function seedInterviews(
+  email: string,
+  applicationId: string,
+  interviews: Record<string, unknown>[],
+): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/interviews`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, applicationId, interviews }),
+  });
+
+  expect(response.status, "the fake API seeded the interviews").toBe(201);
+}
+
+/**
+ * Makes one of the detail screen's context reads fail for this account.
+ *
+ * Named, so a spec running beside this one cannot be the request that spends it -
+ * the same rule the stale-cursor arming follows.
+ */
+export async function failReads(email: string, reads: string[]): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/fail-reads`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, reads }),
+  });
+
+  expect(response.status, "the fake API armed the failing read").toBe(204);
 }

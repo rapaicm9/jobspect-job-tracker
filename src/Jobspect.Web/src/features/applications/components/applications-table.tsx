@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { ApplicationRow } from "../to-application-row";
 import { isColumnVisible, type ViewPreferences } from "../view-preferences";
 
+import { ApplicationLink } from "./application-link";
 import { StageChip } from "./stage-chip";
 
 /** A cell the API had nothing for. The dash is for the eye; a blank cell already
@@ -61,7 +62,14 @@ export function ApplicationsTable({ rows, preferences }: ApplicationsTableProps)
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.id} className={cn(rowHeight)}>
-              <TableCell className="font-medium text-foreground">{row.role}</TableCell>
+              {/* One link per row, on the one cell that names the destination.
+                  A whole-row target would make every other cell unselectable and
+                  leave a screen reader announcing nine columns as the link. */}
+              <TableCell className="font-medium text-foreground">
+                <ApplicationLink id={row.id} className="underline-offset-4 hover:underline">
+                  {row.role}
+                </ApplicationLink>
+              </TableCell>
               <TableCell>{row.companyName ?? <Absent />}</TableCell>
               <TableCell>
                 <StageChip stage={row.stage} />
