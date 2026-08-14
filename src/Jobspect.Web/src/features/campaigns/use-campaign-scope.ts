@@ -1,10 +1,10 @@
 "use client";
 
 import { useQueryState } from "nuqs";
-import { useTransition } from "react";
+import { useCallback, useTransition } from "react";
 
 import type { Campaign } from "./campaign";
-import { campaignScopeOptions, campaignScopeParsers } from "./scope";
+import { campaignScopeOptions, campaignScopeParsers, withCampaignScope } from "./scope";
 
 /**
  * Reading and writing the campaign scope, shared by the switcher and the palette
@@ -29,4 +29,21 @@ export function useCampaignScope(
   const resolved = campaignId ?? campaigns.find((campaign) => campaign.isDefault)?.id ?? null;
 
   return [resolved, setCampaignId, isPending];
+}
+
+/**
+ * Turns a destination into one that keeps the current scope, for anything that
+ * navigates: the nav, the wordmark, the palette.
+ *
+ * The raw parameter rather than the resolved id above. Resolving is right for a
+ * control showing which context it is in and wrong for a link, which should say
+ * nothing when the URL says nothing.
+ *
+ * Read through nuqs rather than `useSearchParams`, so an href updates the moment
+ * the switcher fires rather than when its navigation commits.
+ */
+export function useScopedHref(): (href: string) => string {
+  const [campaignId] = useQueryState("campaignId", campaignScopeParsers.campaignId);
+
+  return useCallback((href: string) => withCampaignScope(href, campaignId), [campaignId]);
 }

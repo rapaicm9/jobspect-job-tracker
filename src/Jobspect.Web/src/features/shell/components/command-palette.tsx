@@ -8,7 +8,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
-import { useCampaignScope, type Campaign } from "@/features/campaigns";
+import { useCampaignScope, useScopedHref, type Campaign } from "@/features/campaigns";
 import { cn } from "@/lib/utils";
 
 import { NAV_ITEMS } from "../nav-items";
@@ -30,6 +30,7 @@ export function CommandPalette({ campaigns }: CommandPaletteProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [, setCampaignId] = useCampaignScope(campaigns);
+  const scopedHref = useScopedHref();
 
   const items = [
     ...NAV_ITEMS.map((item) => item.label),
@@ -52,9 +53,9 @@ export function CommandPalette({ campaigns }: CommandPaletteProps) {
       }
 
       const destination = NAV_ITEMS.find((item) => item.label === label);
-      if (destination !== undefined) router.push(destination.href);
+      if (destination !== undefined) router.push(scopedHref(destination.href));
     },
-    [campaigns, router, setCampaignId],
+    [campaigns, router, scopedHref, setCampaignId],
   );
 
   useEffect(() => {

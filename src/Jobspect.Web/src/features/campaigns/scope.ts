@@ -35,3 +35,25 @@ export const SCOPED_PATHS = ["/board", "/applications", "/analytics"];
 export function isScopedPath(pathname: string): boolean {
   return SCOPED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
+
+/**
+ * Stamps the scope onto a link, so a navigation carries the context it was made
+ * in. Without it a `<Link>` drops every parameter its href does not state, and
+ * moving between two scoped screens quietly reverts to the default campaign.
+ *
+ * A bare href when the scope is absent: an absent parameter already means the
+ * default campaign, so stamping the default's id would repeat what the URL says.
+ */
+export function withCampaignScope(href: string, campaignId: string | null): string {
+  if (campaignId === null) return href;
+
+  // Split first, because isScopedPath answers about a pathname. It also leaves an
+  // href that already carries filters intact rather than replacing them.
+  const [path = "", query = ""] = href.split("?");
+  if (!isScopedPath(path)) return href;
+
+  const params = new URLSearchParams(query);
+  params.set("campaignId", campaignId);
+
+  return `${path}?${params.toString()}`;
+}
