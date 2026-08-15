@@ -6,6 +6,7 @@ export { CustomFieldPanel } from "./components/custom-field-panel";
 export { DetailFacts } from "./components/detail-facts";
 export { DetailHeader } from "./components/detail-header";
 export { DetailQueryProvider } from "./components/detail-query-provider";
+export { EditableFacts } from "./components/editable-facts";
 export { InterviewsPanel } from "./components/interviews-panel";
 export { TransitionMenu } from "./components/transition-menu";
 export { StageChip } from "./components/stage-chip";

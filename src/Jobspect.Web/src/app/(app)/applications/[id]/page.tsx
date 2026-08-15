@@ -8,6 +8,7 @@ import {
   DetailFacts,
   DetailHeader,
   DetailQueryProvider,
+  EditableFacts,
   getApplication,
   InterviewsPanel,
   legalMoves,
@@ -18,7 +19,8 @@ import {
   TransitionMenu,
 } from "@/features/applications";
 import { listCampaigns } from "@/features/campaigns/server";
-import { getAccount } from "@/server/dal";
+import { WORK_MODES } from "@/lib/enums";
+import { getAccount, getPlan } from "@/server/dal";
 
 export async function generateMetadata({
   params,
@@ -50,7 +52,7 @@ export default async function ApplicationDetailPage({
 
   // In parallel because none of them needs another's answer. The account and the
   // campaigns are already memoised by the shell layout, so both are free here.
-  const [application, definitions, contacts, interviews, activity, account, campaigns] =
+  const [application, definitions, contacts, interviews, activity, account, campaigns, plan] =
     await Promise.all([
       getApplication(id),
       listCustomFieldDefinitions(),
@@ -59,6 +61,10 @@ export default async function ApplicationDetailPage({
       listActivity(id),
       getAccount(),
       listCampaigns(),
+      // Read before anything can be edited, because the tier decides what an
+      // absent custom-field bag means to the handler - unchanged for an account
+      // that may not write it, cleared for one that may.
+      getPlan(),
     ]);
 
   // Another user's application answers 404 exactly as a deleted one does, and
@@ -92,11 +98,22 @@ export default async function ApplicationDetailPage({
 
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="flex flex-col gap-6 lg:col-span-2">
-            <DetailFacts
+            {/* The read view stays a Server Component and is handed in as
+                children, so saving refreshes it from the server rather than
+                rebuilding it from what was just submitted. */}
+            <EditableFacts
               application={application}
-              campaignName={campaignName}
-              timeZoneId={timeZoneId}
-            />
+              definitions={definitions.kind === "loaded" ? definitions.items : []}
+              tier={plan?.tier ?? null}
+              workModes={WORK_MODES}
+              campaignId={scope}
+            >
+              <DetailFacts
+                application={application}
+                campaignName={campaignName}
+                timeZoneId={timeZoneId}
+              />
+            </EditableFacts>
           </div>
 
           <div className="flex flex-col gap-6">

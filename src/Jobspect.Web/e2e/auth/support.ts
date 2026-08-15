@@ -264,3 +264,36 @@ export async function idempotencyKeys(email: string): Promise<string[]> {
 
   return body.keys;
 }
+
+/**
+ * Sets the account's tier.
+ *
+ * Free unless a spec says otherwise, matching the fake's own default and the
+ * plan every account registers on.
+ */
+export async function seedPlan(email: string, tier: "Free" | "Pro"): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/plan`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, tier }),
+  });
+
+  expect(response.status, "the fake API seeded the plan").toBe(204);
+}
+
+/**
+ * The body the last full replace actually sent.
+ *
+ * The assertion this exists for is not what the screen shows afterwards - it is
+ * that every field the user never touched went back out carrying what it came in
+ * with. A `PUT` that replaces turns an omission into a deletion, and the screen
+ * would look right either way until the next read.
+ */
+export async function lastUpdateBody(email: string): Promise<Record<string, unknown> | null> {
+  const response = await fetch(
+    `${FAKE_API_ORIGIN}/__test/last-update?email=${encodeURIComponent(email)}`,
+  );
+  const body = (await response.json()) as { body: Record<string, unknown> | null };
+
+  return body.body;
+}

@@ -32,6 +32,9 @@ type ActivityPage = components["schemas"]["PagedResponseOfActivityEntryResponse"
 type ApplicationPage = components["schemas"]["PagedResponseOfApplicationSummaryResponse"];
 type ContactPage = components["schemas"]["PagedResponseOfContactResponse"];
 type InterviewPage = components["schemas"]["PagedResponseOfInterviewResponse"];
+type PlanStatusResponse = components["schemas"]["PlanStatusResponse"];
+type PlanTier = components["schemas"]["PlanTier"];
+type UpdateApplicationRequest = components["schemas"]["UpdateApplicationRequest"];
 type RegisterRequest = components["schemas"]["RegisterRequest"];
 type LoginRequest = components["schemas"]["LoginRequest"];
 type RefreshRequest = components["schemas"]["RefreshRequest"];
@@ -133,6 +136,23 @@ const applications = new Map<string, ApplicationResponse[]>();
 const customFields = new Map<string, CustomFieldResponse[]>();
 const contacts = new Map<string, ContactResponse[]>();
 const interviews = new Map<string, InterviewResponse[]>();
+
+/**
+ * The account's tier, Free unless a spec says otherwise.
+ *
+ * It decides what an absent custom-field bag means to the update below, which
+ * is the one place on this screen where the same request does opposite things.
+ */
+const plans = new Map<string, PlanTier>();
+
+/**
+ * The last body a full replace actually sent, per account.
+ *
+ * Recorded because the assertion that matters is not what the screen shows
+ * afterwards - it is that fourteen fields the user never touched went back out
+ * carrying what they came in with.
+ */
+const lastUpdates = new Map<string, unknown>();
 
 /**
  * The timeline carries no application id on the wire - the whole feed is read
@@ -283,6 +303,27 @@ function sendProblem(response: ServerResponse, status: number, code: string, det
   response.end(payload);
 }
 
+/**
+ * The other 422 shape: field-keyed messages and no `code` at all.
+ *
+ * Kept apart from `sendProblem` because the client reads whichever member is
+ * present, and a body carrying both would be one no real endpoint sends.
+ */
+function sendValidationProblem(response: ServerResponse, errors: Record<string, string[]>): void {
+  const payload = JSON.stringify({
+    type: "https://jobspect.test/problems/validation",
+    title: "One or more validation errors occurred.",
+    status: 422,
+    errors,
+  });
+
+  response.writeHead(422, {
+    "content-type": "application/problem+json",
+    "content-length": Buffer.byteLength(payload),
+  });
+  response.end(payload);
+}
+
 async function readJson<T>(request: IncomingMessage): Promise<T | null> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(chunk as Buffer);
@@ -339,6 +380,89 @@ function anApplication(seed: Partial<ApplicationResponse>): ApplicationResponse 
     updatedAt: null,
     ...seed,
   };
+}
+
+/**
+ * The three ways the real handler refuses a full replace, implemented rather
+ * than armed by a seam.
+ *
+ * Each is a rule about the request the client just built, so a spec that asserts
+ * the refusal is asserting the client got the rule wrong - which is what these
+ * are worth testing. An arming seam would only prove the form can render an
+ * error somebody handed it.
+ */
+function refuseUpdate(
+  userId: string,
+  stored: ApplicationResponse,
+  body: UpdateApplicationRequest,
+): ((response: ServerResponse) => void) | null {
+  if (body.role === null || body.role.trim() === "") {
+    return (response) => sendValidationProblem(response, { role: ["A role is required."] });
+  }
+
+  if (body.appliedDate === null || body.appliedDate === "") {
+    return (response) =>
+      sendValidationProblem(response, { appliedDate: ["An applied date is required."] });
+  }
+
+  // Compared against what is stored, so what it refuses is the change rather
+  // than the value: an application keeps the deadline it was given after it
+  // leaves Offer, and a full replace sends that back every time.
+  if (
+    body.offerDecisionDeadline !== null &&
+    body.offerDecisionDeadline !== stored.offerDecisionDeadline &&
+    stored.stage !== "Offer"
+  ) {
+    return (response) =>
+      sendProblem(
+        response,
+        422,
+        "application.offer_deadline_requires_offer",
+        "An offer decision deadline can only be set while the application is at Offer.",
+      );
+  }
+
+  if (body.customFields !== null && (plans.get(userId) ?? "Free") !== "Pro") {
+    return (response) =>
+      sendProblem(response, 403, "custom_field.not_entitled", "Custom fields are part of Pro.");
+  }
+
+  return null;
+}
+
+/** The replace itself. Every field, because that is what a replace means. */
+function applyUpdate(stored: ApplicationResponse, body: UpdateApplicationRequest): void {
+  stored.role = body.role!;
+  stored.campaignId = body.campaignId ?? stored.campaignId;
+
+  if (body.companyName !== null && body.companyName !== "") {
+    // Resolve-or-create, near enough: a name the client sends on its own always
+    // means "this company, whatever its id".
+    stored.companyId = randomUUID();
+    stored.companyName = body.companyName;
+  } else if (body.companyId === null) {
+    stored.companyId = null;
+    stored.companyName = null;
+  }
+
+  stored.compensation =
+    body.compensation === null
+      ? null
+      : { ...body.compensation, currency: body.compensation.currency ?? "EUR" };
+  stored.location = body.location;
+  stored.workMode = body.workMode as ApplicationResponse["workMode"];
+  stored.postingUrl = body.postingUrl;
+  stored.source = body.source;
+  stored.appliedDate = body.appliedDate!;
+  stored.applicationDeadline = body.applicationDeadline;
+  stored.offerDecisionDeadline = body.offerDecisionDeadline;
+  stored.cvLabel = body.cvLabel;
+  stored.coverLetterLabel = body.coverLetterLabel;
+
+  // Null retains, which is the asymmetry the whole commit is about.
+  if (body.customFields !== null) stored.customFields = body.customFields;
+
+  stored.updatedAt = new Date().toISOString();
 }
 
 /**
@@ -987,7 +1111,84 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  if (method === "POST" && path === "/__test/plan") {
+    const body = await readJson<{ email: string; tier: PlanTier }>(request);
+    const account = accounts.get(accountKey(body?.email ?? ""));
+
+    if (body === null || account === undefined) {
+      sendProblem(response, 404, "account.not_found", "Seed an account before its plan.");
+      return;
+    }
+
+    plans.set(account.userId, body.tier);
+    send(response, 204, undefined);
+    return;
+  }
+
+  // What the client actually put on the wire, which is the only place the
+  // full-replace rule can be checked end to end.
+  if (method === "GET" && path === "/__test/last-update") {
+    const email = new URL(url, "http://fake-api.test").searchParams.get("email") ?? "";
+    const account = accounts.get(accountKey(email));
+
+    send(response, 200, {
+      body: account === undefined ? null : (lastUpdates.get(account.userId) ?? null),
+    });
+    return;
+  }
+
+  if (method === "GET" && path === "/api/v1/billing/plan") {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    send(response, 200, {
+      tier: plans.get(userId) ?? "Free",
+      updatedAt: null,
+    } satisfies PlanStatusResponse);
+    return;
+  }
+
   const applicationMatch = APPLICATION_PATH.exec(path);
+  if (method === "PUT" && applicationMatch !== null) {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    const stored = (applications.get(userId) ?? []).find(
+      (application) => application.id === applicationMatch[1],
+    );
+
+    if (stored === undefined) {
+      sendProblem(response, 404, "application.not_found", "No such application for this account.");
+      return;
+    }
+
+    const body = await readJson<UpdateApplicationRequest>(request);
+    if (body === null) {
+      sendProblem(response, 422, "application.invalid", "A body is required.");
+      return;
+    }
+
+    // Recorded before any refusal, so a spec can read what went out even when
+    // the answer was no.
+    lastUpdates.set(userId, body);
+
+    const refusal = refuseUpdate(userId, stored, body);
+    if (refusal !== null) {
+      refusal(response);
+      return;
+    }
+
+    applyUpdate(stored, body);
+    send(response, 200, stored satisfies ApplicationResponse);
+    return;
+  }
+
   if (method === "GET" && applicationMatch !== null) {
     const userId = callerId(request);
     if (userId === undefined) {

@@ -21,6 +21,12 @@ export interface ApplicationDetail {
   id: string;
   campaignId: string;
   role: string;
+  /**
+   * Kept beside the name because a full replace has to choose between them. An
+   * edit that leaves the name alone re-references this exact company rather than
+   * resolving a name that merely matches it.
+   */
+  companyId: string | null;
   companyName: string | null;
   stage: Stage | UnknownStage;
   source: string | null;
@@ -43,6 +49,7 @@ export interface ApplicationDetailResponse {
   id: string;
   campaignId: string;
   role: string;
+  companyId: null | string;
   companyName: null | string;
   stage: string;
   source: null | string;
@@ -65,6 +72,7 @@ export function toApplicationDetail(response: ApplicationDetailResponse): Applic
     id: response.id,
     campaignId: response.campaignId,
     role: response.role,
+    companyId: response.companyId,
     companyName: response.companyName,
     // Never throws and never blanks the screen: a stage this build has not heard
     // of is reported once and rendered plainly.

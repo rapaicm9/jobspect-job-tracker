@@ -17,6 +17,14 @@ export interface DateFieldProps<
   name: TName;
   label: string;
   description?: string;
+  /**
+   * Shown but not editable - and deliberately not react-hook-form's `disabled`,
+   * which is a different thing entirely. A field the library believes is
+   * disabled submits as `undefined` and drops out of the values, which against a
+   * `PUT` that replaces means the stored value is cleared. `readOnly` keeps it
+   * in the form and in the request.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -35,7 +43,13 @@ export function DateField<
   TFieldValues extends FieldValues,
   TName extends FieldPathByValue<TFieldValues, string>,
   TTransformedValues = TFieldValues,
->({ control, name, label, description }: DateFieldProps<TFieldValues, TName, TTransformedValues>) {
+>({
+  control,
+  name,
+  label,
+  description,
+  readOnly,
+}: DateFieldProps<TFieldValues, TName, TTransformedValues>) {
   const { field, fieldState } = useController({ control, name });
 
   return (
@@ -45,6 +59,7 @@ export function DateField<
           {...binding}
           type="date"
           className="w-fit"
+          readOnly={readOnly}
           name={field.name}
           value={field.value}
           onChange={field.onChange}

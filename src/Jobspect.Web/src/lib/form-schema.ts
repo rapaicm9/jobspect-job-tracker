@@ -69,6 +69,21 @@ export function optionalDate(message: string) {
   return z.string().transform(blankToNull).pipe(z.iso.date(message).nullable());
 }
 
+/**
+ * A calendar date the form insists on.
+ *
+ * Two messages rather than one, because `z.iso.date()` answers a blank box and a
+ * malformed date with the same sentence - and "Invalid ISO date" is not what to
+ * tell somebody who simply has not filled the field in yet.
+ */
+export function requiredDate(missing: string, invalid: string) {
+  return z
+    .string()
+    .transform((value) => value.trim())
+    .refine((value) => value !== "", { message: missing })
+    .pipe(z.iso.date(invalid));
+}
+
 /** What the two money inputs hold between them while they are being typed. */
 export interface MoneyInput {
   amount: string;

@@ -9,13 +9,18 @@
 
 export interface DetailPanelProps {
   title: string;
+  /** A control belonging to the panel rather than to anything inside it. */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }
 
-export function DetailPanel({ title, children }: DetailPanelProps) {
+export function DetailPanel({ title, action, children }: DetailPanelProps) {
   return (
     <section className="rounded-lg border border-border bg-card p-4">
-      <h2 className="text-sm font-medium text-foreground">{title}</h2>
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="text-sm font-medium text-foreground">{title}</h2>
+        {action}
+      </div>
       <div className="mt-3">{children}</div>
     </section>
   );

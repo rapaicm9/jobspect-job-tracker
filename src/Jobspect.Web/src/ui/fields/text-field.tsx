@@ -27,6 +27,15 @@ export interface TextFieldProps<
    * over a string regardless - which is why the schema coerces either way.
    */
   inputMode?: "text" | "decimal" | "numeric";
+  /**
+   * Values to offer without restricting what may be typed.
+   *
+   * A `<datalist>` rather than a listbox, because the field stays free text: the
+   * suggestions are what this account has used before, not a set it has to
+   * choose from. An empty list renders no datalist at all, so a suggestion read
+   * that found nothing - or failed - leaves an ordinary text box behind.
+   */
+  suggestions?: readonly string[];
 }
 
 /**
@@ -50,25 +59,38 @@ export function TextField<
   autoComplete,
   type = "text",
   inputMode,
+  suggestions,
 }: TextFieldProps<TFieldValues, TName, TTransformedValues>) {
   const { field, fieldState } = useController({ control, name });
+  const offered = suggestions ?? [];
 
   return (
     <FieldShell label={label} description={description} messages={messagesFor(fieldState.error)}>
       {(binding) => (
-        <Input
-          {...binding}
-          type={type}
-          inputMode={inputMode}
-          placeholder={placeholder}
-          autoComplete={autoComplete}
-          name={field.name}
-          value={field.value}
-          onChange={field.onChange}
-          onBlur={field.onBlur}
-          ref={field.ref}
-          disabled={field.disabled}
-        />
+        <>
+          <Input
+            {...binding}
+            type={type}
+            inputMode={inputMode}
+            placeholder={placeholder}
+            autoComplete={autoComplete}
+            list={offered.length > 0 ? `${binding.id}-suggestions` : undefined}
+            name={field.name}
+            value={field.value}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+            ref={field.ref}
+            disabled={field.disabled}
+          />
+
+          {offered.length > 0 && (
+            <datalist id={`${binding.id}-suggestions`}>
+              {offered.map((suggestion) => (
+                <option key={suggestion} value={suggestion} />
+              ))}
+            </datalist>
+          )}
+        </>
       )}
     </FieldShell>
   );

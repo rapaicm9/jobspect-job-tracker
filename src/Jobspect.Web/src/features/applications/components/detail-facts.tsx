@@ -4,8 +4,6 @@ import { formatMoney } from "@/lib/money";
 
 import type { ApplicationDetail } from "../application-detail";
 
-import { DetailPanel } from "./detail-panel";
-
 /**
  * Only the facts this application has.
  *
@@ -61,47 +59,52 @@ export interface DetailFactsProps {
   timeZoneId: string | null;
 }
 
+/**
+ * The facts alone, with no panel around them.
+ *
+ * The container belongs to whatever can also show the editor in its place, so
+ * that switching between reading and editing does not swap one bordered box for
+ * another.
+ */
 export function DetailFacts({ application, campaignName, timeZoneId }: DetailFactsProps) {
   const compensation = formatMoney(application.compensation);
 
   return (
-    <DetailPanel title="Details">
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
-        {campaignName !== null && <Fact label="Campaign">{campaignName}</Fact>}
-        <DateFact label="Applied" value={application.appliedDate} />
-        <DateFact label="Application deadline" value={application.applicationDeadline} />
-        {/* Only meaningful once there is an offer, and the API only lets it be
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+      {campaignName !== null && <Fact label="Campaign">{campaignName}</Fact>}
+      <DateFact label="Applied" value={application.appliedDate} />
+      <DateFact label="Application deadline" value={application.applicationDeadline} />
+      {/* Only meaningful once there is an offer, and the API only lets it be
             set then - so its presence is the signal rather than the stage. */}
-        <DateFact label="Offer decision by" value={application.offerDecisionDeadline} />
-        {application.source !== null && <Fact label="Source">{application.source}</Fact>}
-        {compensation !== null && (
-          <Fact label="Compensation">
-            <span className="tabular-nums">{compensation}</span>
-          </Fact>
-        )}
-        {application.location !== null && <Fact label="Location">{application.location}</Fact>}
-        {application.workMode !== null && <Fact label="Work mode">{application.workMode}</Fact>}
-        {application.cvLabel !== null && <Fact label="CV">{application.cvLabel}</Fact>}
-        {application.coverLetterLabel !== null && (
-          <Fact label="Cover letter">{application.coverLetterLabel}</Fact>
-        )}
-        {application.postingUrl !== null && (
-          <Fact label="Posting">
-            {/* noreferrer alongside noopener: the job board has no business
+      <DateFact label="Offer decision by" value={application.offerDecisionDeadline} />
+      {application.source !== null && <Fact label="Source">{application.source}</Fact>}
+      {compensation !== null && (
+        <Fact label="Compensation">
+          <span className="tabular-nums">{compensation}</span>
+        </Fact>
+      )}
+      {application.location !== null && <Fact label="Location">{application.location}</Fact>}
+      {application.workMode !== null && <Fact label="Work mode">{application.workMode}</Fact>}
+      {application.cvLabel !== null && <Fact label="CV">{application.cvLabel}</Fact>}
+      {application.coverLetterLabel !== null && (
+        <Fact label="Cover letter">{application.coverLetterLabel}</Fact>
+      )}
+      {application.postingUrl !== null && (
+        <Fact label="Posting">
+          {/* noreferrer alongside noopener: the job board has no business
                 knowing which application was open when the link was followed. */}
-            <a
-              href={application.postingUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="break-all underline underline-offset-4 hover:text-muted-foreground"
-            >
-              {application.postingUrl}
-            </a>
-          </Fact>
-        )}
-        <InstantFact label="Added" value={application.createdAt} timeZoneId={timeZoneId} />
-        <InstantFact label="Last updated" value={application.updatedAt} timeZoneId={timeZoneId} />
-      </dl>
-    </DetailPanel>
+          <a
+            href={application.postingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="break-all underline underline-offset-4 hover:text-muted-foreground"
+          >
+            {application.postingUrl}
+          </a>
+        </Fact>
+      )}
+      <InstantFact label="Added" value={application.createdAt} timeZoneId={timeZoneId} />
+      <InstantFact label="Last updated" value={application.updatedAt} timeZoneId={timeZoneId} />
+    </dl>
   );
 }
