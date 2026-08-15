@@ -3,7 +3,7 @@
 import { z } from "zod";
 
 import { api } from "@/server/api/client";
-import { idempotencyHeaders } from "@/server/api/idempotency";
+import { idempotencyHeaders, withInFlightRetry } from "@/server/api/idempotency";
 import { requireSession } from "@/server/dal";
 import { callAuthenticated } from "@/server/session/call";
 
@@ -52,16 +52,18 @@ export async function addNote(input: unknown): Promise<AddNoteResult> {
   const { applicationId, note, idempotencyKey } = parsed.data;
   const session = await requireSession();
 
-  const result = await callAuthenticated(session.sid, (init) =>
-    api.POST("/api/v1/applications/{applicationId}/activity", {
-      ...init,
-      params: { path: { applicationId } },
-      body: { note },
-      // Merged, never replaced. `callAuthenticated` re-issues this call with an
-      // Authorization header of its own after a forced refresh, and overwriting
-      // that would send the one retry that matters out unauthenticated.
-      headers: { ...init.headers, ...idempotencyHeaders(idempotencyKey) },
-    }),
+  const result = await withInFlightRetry(idempotencyKey, (key) =>
+    callAuthenticated(session.sid, (init) =>
+      api.POST("/api/v1/applications/{applicationId}/activity", {
+        ...init,
+        params: { path: { applicationId } },
+        body: { note },
+        // Merged, never replaced. `callAuthenticated` re-issues this call with an
+        // Authorization header of its own after a forced refresh, and overwriting
+        // that would send the one retry that matters out unauthenticated.
+        headers: { ...init.headers, ...idempotencyHeaders(key) },
+      }),
+    ),
   );
 
   if (result.ok) return { kind: "added", entry: toActivityEntry(result.data) };
@@ -71,8 +73,9 @@ export async function addNote(input: unknown): Promise<AddNoteResult> {
       return { kind: "invalid", fieldErrors: result.failure.fieldErrors };
 
     case "idempotency-in-flight":
-      // The first attempt is still running, so this is not a failure to report as
-      // one - the note is being written right now.
+      // Reached only after `withInFlightRetry` has already waited and asked
+      // again, so the first attempt is slower than the server's own estimate.
+      // Still not a failure to report as one - the note is being written.
       return { kind: "in-flight" };
 
     default:

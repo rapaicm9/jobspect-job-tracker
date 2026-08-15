@@ -150,6 +150,11 @@ for (const colorScheme of ["light", "dark"] as const) {
 
       await page.goto(`/applications/${DETAIL_ID}`);
 
+      // Open, because a closed menu sweeps nothing and a menu over a header is
+      // the most accessibility-sensitive thing on this screen.
+      await page.getByRole("button", { name: "Move" }).click();
+      await expect(page.getByRole("menu")).toBeVisible();
+
       const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
 
       expect(

@@ -41,11 +41,59 @@ type LogoutRequest = components["schemas"]["LogoutRequest"];
  * The calls a spec can arm to fail: the three reads the detail screen degrades
  * one panel over rather than failing on, plus the one write on that screen.
  */
-type FailableCall = "custom-fields" | "contacts" | "interviews" | "add-note";
+type FailableCall =
+  | "custom-fields"
+  | "contacts"
+  | "interviews"
+  | "add-note"
+  | "transition-in-flight"
+  | "transition-unavailable"
+  | "transition-illegal";
 
 const APPLICATION_PATH = /^\/api\/v1\/applications\/([^/]+)$/;
 const INTERVIEWS_PATH = /^\/api\/v1\/applications\/([^/]+)\/interviews$/;
 const ACTIVITY_PATH = /^\/api\/v1\/applications\/([^/]+)\/activity$/;
+const TRANSITION_PATH = /^\/api\/v1\/applications\/([^/]+)\/transition$/;
+
+type StageName = ApplicationResponse["stage"];
+type TransitionKind = NonNullable<ActivityEntryResponse["transitionKind"]>;
+
+/** The live pipeline in order, as the aggregate holds it. */
+const PIPELINE: StageName[] = ["Applied", "Screening", "Interview", "Offer"];
+
+const OUTCOMES: StageName[] = ["Accepted", "Rejected", "Withdrawn", "Ghosted"];
+
+function toStageName(value: string): StageName | undefined {
+  return [...PIPELINE, ...OUTCOMES].find((stage) => stage === value);
+}
+
+/**
+ * The state machine, transcribed from the aggregate rather than from the client.
+ *
+ * The whole value of a fake here is that it refuses what the real one refuses:
+ * the client's model is a convenience, and this is what lets a spec drive a move
+ * the menu would never offer and still get the real answer.
+ */
+function transitionKindOf(from: StageName, to: StageName): TransitionKind | null {
+  if (from === to) return null;
+
+  const fromActive = PIPELINE.includes(from);
+  const toActive = PIPELINE.includes(to);
+
+  // Active to active: forward only, skips allowed.
+  if (fromActive && toActive) {
+    return PIPELINE.indexOf(to) > PIPELINE.indexOf(from) ? "Advance" : null;
+  }
+
+  // Active to terminal: Accepted needs an offer, the rest reach from anywhere.
+  if (fromActive) return to !== "Accepted" || from === "Offer" ? "Terminal" : null;
+
+  // Terminal to active is a reopen; terminal to terminal corrects the outcome,
+  // and Accepted stays out of reach because it is earned from Offer alone.
+  if (toActive) return "Reopen";
+
+  return to === "Accepted" ? null : "Reclassify";
+}
 
 /** The API's own cap on a note, so the fake refuses what the real handler does. */
 const NOTE_MAX_LENGTH = 2000;
@@ -116,18 +164,21 @@ const idempotencyKeys = new Map<string, string[]>();
 const failingCalls = new Map<string, Set<FailableCall>>();
 
 /**
- * A read stays armed; the write is spent on its first refusal.
+ * A read stays armed; a write is spent on its first refusal.
  *
  * The reads are armed to assert what a panel shows while its read is down, which
- * has to survive however many times the page renders. The write is armed to
- * assert that a retry carries the key the first attempt used - and a retry that
- * could never succeed would prove only half of that.
+ * has to survive however many times the page renders. A write is armed to assert
+ * what the second attempt does - the retry that carries the same key, or the
+ * refusal a user reads - and an arming that could never be got past would prove
+ * only half of that.
  */
 function isFailing(userId: string, call: FailableCall): boolean {
   const armed = failingCalls.get(userId);
   if (armed === undefined || !armed.has(call)) return false;
 
-  if (call === "add-note") armed.delete(call);
+  if (call !== "custom-fields" && call !== "contacts" && call !== "interviews") {
+    armed.delete(call);
+  }
   return true;
 }
 
@@ -714,6 +765,101 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
       // the end rather than a cursor pointing past the last row.
       nextCursor: next < all.length ? encodeCursor(sortTag(sortBy, descending), next) : null,
     } satisfies ApplicationPage);
+    return;
+  }
+
+  const transitionMatch = TRANSITION_PATH.exec(path);
+  if (method === "POST" && transitionMatch !== null) {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    // Recorded before anything can refuse the request, so an armed failure still
+    // leaves the key visible to the spec that is about to watch it be re-issued.
+    const key = request.headers["idempotency-key"];
+    if (typeof key === "string") {
+      idempotencyKeys.set(userId, [...(idempotencyKeys.get(userId) ?? []), key]);
+    }
+
+    const body = await readJson<{ targetStage: string | null }>(request);
+    const target = body?.targetStage ?? "";
+
+    if (isFailing(userId, "transition-in-flight")) {
+      // Retry-After is what the client waits before re-issuing the same key.
+      response.writeHead(409, { "content-type": "application/problem+json", "retry-after": "1" });
+      response.end(
+        JSON.stringify({
+          type: "https://jobspect.test/problems/idempotency.in_flight",
+          title: "Request failed",
+          status: 409,
+          detail: "That request is already being processed.",
+          code: "idempotency.in_flight",
+        }),
+      );
+      return;
+    }
+
+    if (isFailing(userId, "transition-unavailable")) {
+      sendProblem(response, 503, "idempotency.unavailable", "The idempotency store is down.");
+      return;
+    }
+
+    const application = (applications.get(userId) ?? []).find(
+      (candidate) => candidate.id === transitionMatch[1],
+    );
+
+    if (application === undefined) {
+      sendProblem(response, 404, "application.not_found", "No application for this account.");
+      return;
+    }
+
+    // A stage that is not a stage is a different failure from a move that is not
+    // allowed, and the two are keyed differently so a client can tell them apart.
+    const stage = toStageName(target);
+    if (stage === undefined) {
+      send(response, 422, {
+        type: "https://jobspect.test/problems/validation",
+        title: "Request failed",
+        status: 422,
+        errors: { targetStage: ["The target stage is not a known pipeline stage."] },
+      });
+      return;
+    }
+
+    const kind = transitionKindOf(application.stage, stage);
+
+    if (kind === null || isFailing(userId, "transition-illegal")) {
+      sendProblem(
+        response,
+        422,
+        "application.illegal_transition",
+        `An application cannot move from ${application.stage} to ${stage}.`,
+      );
+      return;
+    }
+
+    const from = application.stage;
+    application.stage = stage;
+    application.updatedAt = new Date().toISOString();
+
+    // The move writes its own line of history, which is what the detail screen
+    // has to refetch to stay truthful.
+    activity.set(userId, [
+      ...(activity.get(userId) ?? []),
+      {
+        applicationId: application.id,
+        entry: anActivityEntry({
+          kind: "StageChanged",
+          fromStage: from,
+          toStage: stage,
+          transitionKind: kind,
+        }),
+      },
+    ]);
+
+    send(response, 200, application satisfies ApplicationResponse);
     return;
   }
 

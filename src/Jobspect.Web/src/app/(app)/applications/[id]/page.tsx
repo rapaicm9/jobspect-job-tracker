@@ -7,12 +7,15 @@ import {
   CustomFieldPanel,
   DetailFacts,
   DetailHeader,
+  DetailQueryProvider,
   getApplication,
   InterviewsPanel,
+  legalMoves,
   listActivity,
   listApplicationContacts,
   listApplicationInterviews,
   listCustomFieldDefinitions,
+  TransitionMenu,
 } from "@/features/applications";
 import { listCampaigns } from "@/features/campaigns/server";
 import { getAccount } from "@/server/dal";
@@ -66,34 +69,50 @@ export default async function ApplicationDetailPage({
   const campaignName =
     campaigns.find((campaign) => campaign.id === application.campaignId)?.name ?? null;
 
+  // Computed here because the stage lists live behind `server-only`. The menu is
+  // handed the answers rather than the rules.
+  const moves = legalMoves(application.stage);
+
   return (
-    <div className="flex flex-col gap-6">
-      {/* The transition menu drops into the header's `actions` slot, which is
-          still empty. */}
-      <DetailHeader application={application} campaignId={scope} />
+    // Above everything, so the menu in the header can invalidate the timeline's
+    // walk below it. The regions inside stay Server Components.
+    <DetailQueryProvider>
+      <div className="flex flex-col gap-6">
+        <DetailHeader
+          application={application}
+          campaignId={scope}
+          actions={
+            <TransitionMenu
+              applicationId={application.id}
+              advanceTo={moves.advanceTo}
+              closeAs={moves.closeAs}
+            />
+          }
+        />
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="flex flex-col gap-6 lg:col-span-2">
-          <DetailFacts
-            application={application}
-            campaignName={campaignName}
-            timeZoneId={timeZoneId}
-          />
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="flex flex-col gap-6 lg:col-span-2">
+            <DetailFacts
+              application={application}
+              campaignName={campaignName}
+              timeZoneId={timeZoneId}
+            />
+          </div>
+
+          <div className="flex flex-col gap-6">
+            <InterviewsPanel interviews={interviews} timeZoneId={timeZoneId} />
+            <ContactsPanel contacts={contacts} />
+            <CustomFieldPanel values={application.customFields} definitions={definitions} />
+          </div>
         </div>
 
-        <div className="flex flex-col gap-6">
-          <InterviewsPanel interviews={interviews} timeZoneId={timeZoneId} />
-          <ContactsPanel contacts={contacts} />
-          <CustomFieldPanel values={application.customFields} definitions={definitions} />
-        </div>
+        {/* Full width below the grid. */}
+        <ActivityTimeline
+          applicationId={application.id}
+          timeZoneId={timeZoneId}
+          initialPage={activity.kind === "page" ? activity.page : null}
+        />
       </div>
-
-      {/* Full width below the grid, and the only region carrying a write. */}
-      <ActivityTimeline
-        applicationId={application.id}
-        timeZoneId={timeZoneId}
-        initialPage={activity.kind === "page" ? activity.page : null}
-      />
-    </div>
+    </DetailQueryProvider>
   );
 }

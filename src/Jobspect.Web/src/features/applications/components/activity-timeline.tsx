@@ -4,8 +4,7 @@
 // list. The timeline is the one list in the product that genuinely grows at the
 // head while it is being read, which is the case ADR 0008 cites for keyset.
 
-import { QueryClient, QueryClientProvider, useInfiniteQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 
 import { Button } from "@/ui/button";
 
@@ -28,36 +27,21 @@ export function ActivityTimeline({
   timeZoneId,
   initialPage,
 }: ActivityTimelineProps) {
-  // Created once per mount rather than at module scope, which on the server would
-  // be one cache shared by every request and therefore by every account.
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            // The server rendered this a moment ago. Refetching on mount would ask
-            // the API for what is already on the screen.
-            staleTime: 30_000,
-            refetchOnWindowFocus: false,
-          },
-        },
-      }),
-  );
-
+  // The cache lives in `DetailQueryProvider`, above the whole screen, because the
+  // transition menu up in the header has to be able to invalidate this walk: a
+  // move writes a stage-change entry that only a refetch can show.
   return (
-    <QueryClientProvider client={queryClient}>
-      <DetailPanel title="Activity">
-        <div className="flex flex-col gap-6">
-          <NoteComposer applicationId={applicationId} />
+    <DetailPanel title="Activity">
+      <div className="flex flex-col gap-6">
+        <NoteComposer applicationId={applicationId} />
 
-          {initialPage === null ? (
-            <PanelUnavailable subject="This application's history" />
-          ) : (
-            <Feed applicationId={applicationId} timeZoneId={timeZoneId} initialPage={initialPage} />
-          )}
-        </div>
-      </DetailPanel>
-    </QueryClientProvider>
+        {initialPage === null ? (
+          <PanelUnavailable subject="This application's history" />
+        ) : (
+          <Feed applicationId={applicationId} timeZoneId={timeZoneId} initialPage={initialPage} />
+        )}
+      </div>
+    </DetailPanel>
   );
 }
 

@@ -75,8 +75,9 @@ export function NoteComposer({ applicationId }: NoteComposerProps) {
           return;
 
         case "in-flight":
-          // Not a failure. The first attempt is still being written, so reporting
-          // it as one would be the single most misleading thing to say here.
+          // The action has already waited and asked again, so this is the slow
+          // case rather than the ordinary one. Still not a failure: the note is
+          // being written, and saying it was not would be the one wrong thing.
           setProblem("This note is still being saved. Give it a moment.");
           return;
 
