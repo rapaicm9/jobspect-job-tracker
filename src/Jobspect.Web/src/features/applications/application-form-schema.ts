@@ -53,6 +53,42 @@ export type ApplicationFormInput = z.input<typeof applicationFormSchema>;
 export type ApplicationFormOutput = z.output<typeof applicationFormSchema>;
 
 /**
+ * Opening an application, stated as its difference from editing one.
+ *
+ * Two deltas, and each is a fact about the endpoint rather than a preference.
+ * `CreateApplicationRequest` has no offer-decision deadline at all - a new
+ * application starts at Applied, and a decision deadline with no offer behind it
+ * means nothing. And the applied date is optional here where a replace requires
+ * it, because the API fills an absent one with *today in the account's own
+ * timezone*: a date is only meaningful in a place, and the server is the side
+ * that reliably knows which. Prefilling it here would compute the same rule
+ * twice and get it wrong for anybody travelling.
+ */
+export const createApplicationFormSchema = applicationFormSchema
+  .omit({ offerDecisionDeadline: true })
+  .extend({ appliedDate: optionalDate("Enter the applied date as a date.") });
+
+export type CreateApplicationFormInput = z.input<typeof createApplicationFormSchema>;
+export type CreateApplicationFormOutput = z.output<typeof createApplicationFormSchema>;
+
+/** A blank form. Strings rather than nulls, for the reason `toFormValues` gives. */
+export function emptyFormValues(): CreateApplicationFormInput {
+  return {
+    role: "",
+    companyName: "",
+    source: "",
+    location: "",
+    postingUrl: "",
+    cvLabel: "",
+    coverLetterLabel: "",
+    workMode: null,
+    appliedDate: "",
+    applicationDeadline: "",
+    compensation: EMPTY_MONEY,
+  };
+}
+
+/**
  * The stored application, as the form holds it while it is being edited.
  *
  * Every absent value becomes `""` rather than staying null: an input is a string

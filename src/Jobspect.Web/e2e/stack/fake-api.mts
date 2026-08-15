@@ -34,6 +34,7 @@ type ContactPage = components["schemas"]["PagedResponseOfContactResponse"];
 type InterviewPage = components["schemas"]["PagedResponseOfInterviewResponse"];
 type PlanStatusResponse = components["schemas"]["PlanStatusResponse"];
 type PlanTier = components["schemas"]["PlanTier"];
+type CreateApplicationRequest = components["schemas"]["CreateApplicationRequest"];
 type UpdateApplicationRequest = components["schemas"]["UpdateApplicationRequest"];
 type RegisterRequest = components["schemas"]["RegisterRequest"];
 type LoginRequest = components["schemas"]["LoginRequest"];
@@ -49,6 +50,7 @@ type FailableCall =
   | "contacts"
   | "interviews"
   | "add-note"
+  | "create-application"
   | "transition-in-flight"
   | "transition-unavailable"
   | "transition-illegal";
@@ -380,6 +382,20 @@ function anApplication(seed: Partial<ApplicationResponse>): ApplicationResponse 
     updatedAt: null,
     ...seed,
   };
+}
+
+/**
+ * The campaign an application opens in when the request names none.
+ *
+ * The real handler resolves the account's default, and every account is
+ * provisioned one at registration - so an account with no campaigns at all is an
+ * invariant breach rather than something a client can cause.
+ */
+function defaultCampaignId(userId: string): string {
+  const owned = campaigns.get(userId) ?? [];
+  const fallback = owned.find((campaign) => campaign.isDefault) ?? owned[0];
+
+  return fallback?.id ?? randomUUID();
 }
 
 /**
@@ -826,6 +842,58 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     }
 
     send(response, 200, campaigns.get(userId) ?? []);
+    return;
+  }
+
+  if (method === "POST" && path === "/api/v1/applications") {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    // Recorded before the arming is checked, so a spec watching a retry sees the
+    // key of the attempt that failed as well as the one that worked.
+    const key = request.headers["idempotency-key"];
+    if (typeof key === "string") {
+      idempotencyKeys.set(userId, [...(idempotencyKeys.get(userId) ?? []), key]);
+    }
+
+    if (isFailing(userId, "create-application")) {
+      sendProblem(response, 500, "internal", "The create write is armed to fail.");
+      return;
+    }
+
+    const body = await readJson<CreateApplicationRequest>(request);
+
+    if (body === null || body.role === null || body.role.trim() === "") {
+      sendValidationProblem(response, { role: ["A role is required."] });
+      return;
+    }
+
+    const created = anApplication({
+      campaignId: body.campaignId ?? defaultCampaignId(userId),
+      companyId: body.companyName === null ? null : randomUUID(),
+      companyName: body.companyName,
+      role: body.role.trim(),
+      compensation:
+        body.compensation === null
+          ? null
+          : { amount: body.compensation.amount, currency: body.compensation.currency ?? "EUR" },
+      location: body.location,
+      workMode: body.workMode as ApplicationResponse["workMode"],
+      postingUrl: body.postingUrl,
+      source: body.source,
+      // Absent means today, which the real handler computes in the account's own
+      // timezone. The fake has one clock and no reason to pretend otherwise.
+      appliedDate: body.appliedDate ?? new Date().toISOString().slice(0, 10),
+      applicationDeadline: body.applicationDeadline,
+      cvLabel: body.cvLabel,
+      coverLetterLabel: body.coverLetterLabel,
+    });
+
+    applications.set(userId, [created, ...(applications.get(userId) ?? [])]);
+    send(response, 201, created satisfies ApplicationResponse);
     return;
   }
 

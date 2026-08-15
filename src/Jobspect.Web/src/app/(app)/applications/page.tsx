@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import {
+  AddApplicationButton,
   applicationsSearchParams,
   ApplicationsBrowser,
   listFirstPage,
@@ -34,7 +35,12 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/app
           <p className="text-sm text-muted-foreground">Every application you have recorded.</p>
         </div>
 
-        {!empty && <ViewPreferencesForm preferences={preferences} />}
+        <div className="flex items-center gap-2">
+          {!empty && <ViewPreferencesForm preferences={preferences} />}
+          {/* Always rendered, including on a list filtered down to nothing -
+              which shows the table rather than the empty state below. */}
+          <AddApplicationButton campaignId={filters.campaignId} />
+        </div>
       </div>
 
       {empty ? (
@@ -43,6 +49,9 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/app
           <p className="mt-1 text-sm text-muted-foreground">
             The ones you record will appear here, with their stage, dates and source.
           </p>
+          <div className="mt-4 flex justify-center">
+            <AddApplicationButton campaignId={filters.campaignId} />
+          </div>
         </div>
       ) : (
         <ApplicationsBrowser

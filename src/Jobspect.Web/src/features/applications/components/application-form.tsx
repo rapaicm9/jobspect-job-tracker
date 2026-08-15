@@ -95,11 +95,11 @@ export function ApplicationForm({
       switch (result.kind) {
         case "saved":
           // The header, the facts and the last-updated instant are all server
-          // rendered, so the read view has to come back from the server rather
-          // than be reconstructed here. Nothing touches the timeline: an edit
-          // writes no activity entry.
+          // rendered, and the action has already invalidated this route - so the
+          // refreshed tree arrives with the action's own response and closing the
+          // form is all there is left to do. Nothing touches the timeline: an
+          // edit writes no activity entry.
           onDone();
-          router.refresh();
           return;
 
         case "invalid": {

@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { api } from "@/server/api/client";
@@ -86,7 +87,19 @@ export async function updateApplication(input: unknown): Promise<UpdateApplicati
     }),
   );
 
-  if (result.ok) return { kind: "saved" };
+  if (result.ok) {
+    // Invalidated here rather than refreshed from the component, and the
+    // difference is not cosmetic: a `router.refresh()` after the action returns
+    // is a *second* render request racing this one, and two concurrent server
+    // renders sharing one session is how a read goes out unauthenticated - the
+    // token provider answers null when it cannot read the session, and the call
+    // is simply made without one. Revalidating here folds the re-render into
+    // this response, where nothing is racing it.
+    revalidatePath(`/applications/${applicationId}`);
+    revalidatePath("/applications");
+
+    return { kind: "saved" };
+  }
 
   switch (result.failure.kind) {
     case "validation":

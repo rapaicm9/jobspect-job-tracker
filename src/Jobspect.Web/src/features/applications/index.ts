@@ -1,6 +1,8 @@
 export { type ApplicationDetail } from "./application-detail";
 export { ActivityTimeline } from "./components/activity-timeline";
+export { AddApplicationButton } from "./components/add-application-button";
 export { ApplicationsBrowser } from "./components/applications-browser";
+export { CreateApplicationForm } from "./components/create-application-form";
 export { ContactsPanel } from "./components/contacts-panel";
 export { CustomFieldPanel } from "./components/custom-field-panel";
 export { DetailFacts } from "./components/detail-facts";
@@ -27,6 +29,7 @@ export {
   type ApplicationPage,
 } from "./queries/list-applications";
 export { listApplicationContacts } from "./queries/list-contacts";
+export { listUsedSources } from "./queries/list-sources";
 export { listCustomFieldDefinitions } from "./queries/list-custom-fields";
 export { listApplicationInterviews } from "./queries/list-interviews";
 export { readViewPreferences } from "./queries/read-view-preferences";
