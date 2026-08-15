@@ -3,17 +3,20 @@
 // A Client Component because `useActionState` is a client hook: the field errors
 // have to survive the round trip and re-render in place. The pages that mount it
 // stay Server Components.
+//
+// It is not a react-hook-form form and does not need to be. Two fields the
+// browser can post on its own, no client-side rules worth stating, and the
+// server owns every message - so what it takes from the forms kit is the
+// wiring, not the library.
 
 import { useActionState } from "react";
 
-import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
+import { FieldShell } from "@/ui/fields/field-shell";
+import { FormError } from "@/ui/fields/form-actions";
 import { Input } from "@/ui/input";
-import { Label } from "@/ui/label";
 
 import { EMPTY_FORM_STATE, type AuthFormState } from "../form-state";
-
-import { FieldErrors } from "./field-errors";
 
 export interface CredentialFormProps {
   action: (state: AuthFormState, formData: FormData) => Promise<AuthFormState>;
@@ -33,54 +36,31 @@ export function CredentialForm({
 }: CredentialFormProps) {
   const [state, submit, pending] = useActionState(action, EMPTY_FORM_STATE);
 
-  const emailErrors = state.fieldErrors.email;
-  const passwordErrors = state.fieldErrors.password;
-  const hintId = passwordHint === undefined ? undefined : "password-hint";
-
   return (
     <form action={submit} className="space-y-5" noValidate>
-      {state.formError !== null && (
-        <Alert variant="destructive">
-          <AlertDescription>{state.formError}</AlertDescription>
-        </Alert>
-      )}
+      <FormError message={state.formError} />
 
-      <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          aria-invalid={emailErrors !== undefined}
-          aria-describedby={emailErrors === undefined ? undefined : "email-errors"}
-        />
-        <FieldErrors id="email-errors" messages={emailErrors} />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete={passwordAutoComplete}
-          required
-          aria-invalid={passwordErrors !== undefined}
-          aria-describedby={
-            [passwordErrors === undefined ? undefined : "password-errors", hintId]
-              .filter(Boolean)
-              .join(" ") || undefined
-          }
-        />
-        {passwordHint !== undefined && (
-          <p id={hintId} className="text-sm text-muted-foreground">
-            {passwordHint}
-          </p>
+      <FieldShell label="Email" messages={state.fieldErrors.email ?? []}>
+        {(binding) => (
+          <Input {...binding} name="email" type="email" autoComplete="email" required />
         )}
-        <FieldErrors id="password-errors" messages={passwordErrors} />
-      </div>
+      </FieldShell>
+
+      <FieldShell
+        label="Password"
+        description={passwordHint}
+        messages={state.fieldErrors.password ?? []}
+      >
+        {(binding) => (
+          <Input
+            {...binding}
+            name="password"
+            type="password"
+            autoComplete={passwordAutoComplete}
+            required
+          />
+        )}
+      </FieldShell>
 
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? pendingLabel : submitLabel}

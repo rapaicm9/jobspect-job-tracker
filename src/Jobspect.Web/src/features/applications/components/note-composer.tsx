@@ -10,7 +10,8 @@ import { useRef, useState, useTransition } from "react";
 
 import { keyForIntent, type Intent } from "@/lib/idempotency";
 import { Button } from "@/ui/button";
-import { Label } from "@/ui/label";
+import { FieldShell } from "@/ui/fields/field-shell";
+import { Textarea } from "@/ui/textarea";
 
 import { addNote } from "../actions/add-note";
 import { activityQueryKey, type TimelinePage } from "../activity-reading";
@@ -97,37 +98,26 @@ export function NoteComposer({ applicationId }: NoteComposerProps) {
         submit();
       }}
     >
-      <Label htmlFor="note">Add a note</Label>
-
-      <textarea
-        id="note"
-        name="note"
-        rows={3}
-        // No `maxLength`. A hard cap truncates a paste without saying so, and the
-        // API answers an over-long note with a message keyed to this field -
-        // which is both the better thing to show and the only place the rule is
-        // stated once. The empty case is guarded below because that one costs a
-        // round trip to learn nothing.
-        value={note}
-        onChange={(event) => {
-          setNote(event.target.value);
-        }}
-        aria-describedby={messages.length > 0 ? "note-errors" : undefined}
-        aria-invalid={messages.length > 0 || undefined}
-        placeholder="A call, a follow-up, anything worth remembering."
-        className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
-        disabled={isSubmitting}
-      />
-
-      {/* A list rather than a string: a field can carry several messages. The
-          forms commit consolidates this renderer once it has more callers. */}
-      {messages.length > 0 && (
-        <ul id="note-errors" className="space-y-0.5 text-sm text-destructive">
-          {messages.map((message) => (
-            <li key={message}>{message}</li>
-          ))}
-        </ul>
-      )}
+      <FieldShell label="Add a note" messages={messages}>
+        {(binding) => (
+          <Textarea
+            {...binding}
+            name="note"
+            rows={3}
+            // No `maxLength`. A hard cap truncates a paste without saying so, and
+            // the API answers an over-long note with a message keyed to this
+            // field - which is both the better thing to show and the only place
+            // the rule is stated once. The empty case is guarded below because
+            // that one costs a round trip to learn nothing.
+            value={note}
+            onChange={(event) => {
+              setNote(event.target.value);
+            }}
+            placeholder="A call, a follow-up, anything worth remembering."
+            disabled={isSubmitting}
+          />
+        )}
+      </FieldShell>
 
       <Button
         type="submit"
