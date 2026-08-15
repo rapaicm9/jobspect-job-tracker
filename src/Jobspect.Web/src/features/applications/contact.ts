@@ -1,4 +1,4 @@
-import { toContactRole, type ContactRole } from "@/server/api/enums";
+import { toContactRole, type ContactRole } from "@/lib/enums";
 
 /** One contact under an application, as the panel renders it. */
 export interface Contact {

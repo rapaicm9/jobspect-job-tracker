@@ -1,4 +1,4 @@
-import type { Stage, UnknownStage } from "@/server/api/enums";
+import type { Stage, UnknownStage } from "@/lib/enums";
 
 import type { ActivityEntry } from "./to-activity-entry";
 

@@ -17,7 +17,7 @@ import {
   STAGES,
   TRANSITION_KINDS,
   WORK_MODES,
-} from "@/server/api/enums";
+} from "@/lib/enums";
 
 // Read the committed document rather than a running host. The backend's own
 // gate already proves the document matches the host; what is unproven is that

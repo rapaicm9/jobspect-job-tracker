@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import type { Stage, UnknownStage } from "@/server/api/enums";
+import type { Stage, UnknownStage } from "@/lib/enums";
 
 /**
  * Full class strings rather than a template, because Tailwind reads the source

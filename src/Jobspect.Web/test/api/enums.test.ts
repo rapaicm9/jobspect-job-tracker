@@ -10,7 +10,7 @@ import {
   toInterviewType,
   toStage,
   toWorkMode,
-} from "@/server/api/enums";
+} from "@/lib/enums";
 
 afterEach(() => {
   vi.restoreAllMocks();

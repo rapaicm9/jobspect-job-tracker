@@ -5,7 +5,7 @@ import {
   type ActivityKind,
   type Stage,
   type UnknownStage,
-} from "@/server/api/enums";
+} from "@/lib/enums";
 
 /**
  * One row of an application's timeline, as the screen needs it.

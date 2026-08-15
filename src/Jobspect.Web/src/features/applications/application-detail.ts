@@ -1,11 +1,5 @@
 import type { Money } from "@/lib/money";
-import {
-  toStage,
-  toWorkMode,
-  type Stage,
-  type UnknownStage,
-  type WorkMode,
-} from "@/server/api/enums";
+import { toStage, toWorkMode, type Stage, type UnknownStage, type WorkMode } from "@/lib/enums";
 
 /**
  * One application, as the detail screen needs it.

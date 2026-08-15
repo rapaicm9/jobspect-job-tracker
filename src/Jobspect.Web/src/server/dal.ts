@@ -10,7 +10,7 @@ import { redirect } from "next/navigation";
 import { cache, experimental_taintUniqueValue } from "react";
 
 import { api } from "@/server/api/client";
-import { toPlanTier, type Entitlement, type PlanTier } from "@/server/api/enums";
+import { toPlanTier, type Entitlement, type PlanTier } from "@/lib/enums";
 import type { ApiFailure } from "@/server/api/errors";
 import { callAuthenticated } from "@/server/session/call";
 import { readSessionCookie } from "@/server/session/cookie";

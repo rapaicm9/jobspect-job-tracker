@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { ACTIVE_STAGES } from "@/server/api/enums";
+import { ACTIVE_STAGES } from "@/lib/enums";
 
 import { requestTransition, type TransitionResult } from "../request-transition";
 

@@ -7,7 +7,7 @@ import {
   readViewPreferences,
   ViewPreferencesForm,
 } from "@/features/applications";
-import { STAGES } from "@/server/api/enums";
+import { STAGES } from "@/lib/enums";
 
 export const metadata: Metadata = { title: "Applications — Jobspect" };
 

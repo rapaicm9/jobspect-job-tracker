@@ -1,4 +1,4 @@
-import { ACTIVE_STAGES, TERMINAL_STAGES, type Stage, type UnknownStage } from "@/server/api/enums";
+import { ACTIVE_STAGES, TERMINAL_STAGES, type Stage, type UnknownStage } from "@/lib/enums";
 
 /**
  * Where an application may go from where it is.

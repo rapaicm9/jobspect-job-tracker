@@ -5,7 +5,7 @@ import {
   type InterviewFormat,
   type InterviewOutcome,
   type InterviewType,
-} from "@/server/api/enums";
+} from "@/lib/enums";
 
 /** One interview under an application, as the panel renders it. */
 export interface Interview {

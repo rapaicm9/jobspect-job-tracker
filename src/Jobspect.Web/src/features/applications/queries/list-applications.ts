@@ -1,7 +1,7 @@
 import "server-only";
 
 import { api } from "@/server/api/client";
-import { STAGES } from "@/server/api/enums";
+import { STAGES } from "@/lib/enums";
 import { requireSession } from "@/server/dal";
 import { callAuthenticated } from "@/server/session/call";
 

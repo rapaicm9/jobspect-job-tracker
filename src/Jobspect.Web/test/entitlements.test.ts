@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ENTITLEMENTS } from "@/server/api/enums";
+import { ENTITLEMENTS } from "@/lib/enums";
 import { grants } from "@/server/dal";
 
 // `getPlan` and `hasEntitlement` are not here, and not missing: both reach

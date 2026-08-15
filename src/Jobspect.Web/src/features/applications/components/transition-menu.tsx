@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 
 import { keyForIntent, type Intent } from "@/lib/idempotency";
-import type { Stage } from "@/server/api/enums";
+import type { Stage } from "@/lib/enums";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import {

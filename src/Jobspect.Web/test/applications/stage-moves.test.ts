@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { legalMoves } from "@/features/applications/stage-moves";
-import { ACTIVE_STAGES, STAGES, type Stage } from "@/server/api/enums";
+import { ACTIVE_STAGES, STAGES, type Stage } from "@/lib/enums";
 
 /**
  * The backend's rules, written as a predicate rather than as a pair of lists.

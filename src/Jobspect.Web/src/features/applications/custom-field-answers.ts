@@ -1,4 +1,4 @@
-import { toCustomFieldType, type CustomFieldType } from "@/server/api/enums";
+import { toCustomFieldType, type CustomFieldType } from "@/lib/enums";
 
 /**
  * One of the account's field definitions, as the screens need it.

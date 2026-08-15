@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Entitlement } from "./enums";
+import type { Entitlement } from "@/lib/enums";
 
 // Three body shapes arrive on the wire. `code` is absent on validation problems,
 // which key their messages to fields instead, and absent again on the framework's
