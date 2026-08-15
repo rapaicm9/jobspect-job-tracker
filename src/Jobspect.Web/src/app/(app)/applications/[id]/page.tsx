@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import {
+  ActivityTimeline,
   ContactsPanel,
   CustomFieldPanel,
   DetailFacts,
   DetailHeader,
   getApplication,
   InterviewsPanel,
+  listActivity,
   listApplicationContacts,
   listApplicationInterviews,
   listCustomFieldDefinitions,
@@ -45,14 +47,16 @@ export default async function ApplicationDetailPage({
 
   // In parallel because none of them needs another's answer. The account and the
   // campaigns are already memoised by the shell layout, so both are free here.
-  const [application, definitions, contacts, interviews, account, campaigns] = await Promise.all([
-    getApplication(id),
-    listCustomFieldDefinitions(),
-    listApplicationContacts(id),
-    listApplicationInterviews(id),
-    getAccount(),
-    listCampaigns(),
-  ]);
+  const [application, definitions, contacts, interviews, activity, account, campaigns] =
+    await Promise.all([
+      getApplication(id),
+      listCustomFieldDefinitions(),
+      listApplicationContacts(id),
+      listApplicationInterviews(id),
+      listActivity(id),
+      getAccount(),
+      listCampaigns(),
+    ]);
 
   // Another user's application answers 404 exactly as a deleted one does, and
   // this page says the same thing for both. It is absent, not denied.
@@ -64,8 +68,8 @@ export default async function ApplicationDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* The transition menu drops into the header's `actions` slot; the activity
-          timeline goes full width below this grid. Neither exists yet. */}
+      {/* The transition menu drops into the header's `actions` slot, which is
+          still empty. */}
       <DetailHeader application={application} campaignId={scope} />
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -83,6 +87,13 @@ export default async function ApplicationDetailPage({
           <CustomFieldPanel values={application.customFields} definitions={definitions} />
         </div>
       </div>
+
+      {/* Full width below the grid, and the only region carrying a write. */}
+      <ActivityTimeline
+        applicationId={application.id}
+        timeZoneId={timeZoneId}
+        initialPage={activity.kind === "page" ? activity.page : null}
+      />
     </div>
   );
 }

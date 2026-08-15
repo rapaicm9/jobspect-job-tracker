@@ -27,6 +27,8 @@ type CampaignResponse = components["schemas"]["CampaignResponse"];
 type ContactResponse = components["schemas"]["ContactResponse"];
 type CustomFieldResponse = components["schemas"]["CustomFieldResponse"];
 type InterviewResponse = components["schemas"]["InterviewResponse"];
+type ActivityEntryResponse = components["schemas"]["ActivityEntryResponse"];
+type ActivityPage = components["schemas"]["PagedResponseOfActivityEntryResponse"];
 type ApplicationPage = components["schemas"]["PagedResponseOfApplicationSummaryResponse"];
 type ContactPage = components["schemas"]["PagedResponseOfContactResponse"];
 type InterviewPage = components["schemas"]["PagedResponseOfInterviewResponse"];
@@ -35,11 +37,18 @@ type LoginRequest = components["schemas"]["LoginRequest"];
 type RefreshRequest = components["schemas"]["RefreshRequest"];
 type LogoutRequest = components["schemas"]["LogoutRequest"];
 
-/** The reads the detail screen degrades one panel over rather than failing on. */
-type ContextRead = "custom-fields" | "contacts" | "interviews";
+/**
+ * The calls a spec can arm to fail: the three reads the detail screen degrades
+ * one panel over rather than failing on, plus the one write on that screen.
+ */
+type FailableCall = "custom-fields" | "contacts" | "interviews" | "add-note";
 
 const APPLICATION_PATH = /^\/api\/v1\/applications\/([^/]+)$/;
 const INTERVIEWS_PATH = /^\/api\/v1\/applications\/([^/]+)\/interviews$/;
+const ACTIVITY_PATH = /^\/api\/v1\/applications\/([^/]+)\/activity$/;
+
+/** The API's own cap on a note, so the fake refuses what the real handler does. */
+const NOTE_MAX_LENGTH = 2000;
 
 // An hour, so nothing in the suite crosses the 60s refresh skew by accident. A
 // spec that wants a rotation should ask for one rather than wait for one.
@@ -78,16 +87,48 @@ const contacts = new Map<string, ContactResponse[]>();
 const interviews = new Map<string, InterviewResponse[]>();
 
 /**
- * Which context reads answer 500 for this account, armed by a test seam.
+ * The timeline carries no application id on the wire - the whole feed is read
+ * under one application - so the association is the fake's to hold.
+ */
+interface StoredEntry {
+  applicationId: string;
+  entry: ActivityEntryResponse;
+}
+
+const activity = new Map<string, StoredEntry[]>();
+
+/**
+ * Every `Idempotency-Key` this account has sent, in order.
+ *
+ * Recorded rather than honoured: replaying a response is the real middleware's
+ * job and no spec here needs one. What a spec does need is to see that a key went
+ * out at all, and that a retry sent the same one.
+ */
+const idempotencyKeys = new Map<string, string[]>();
+
+/**
+ * Which calls answer 500 for this account, armed by a test seam.
  *
  * Keyed by account for the reason the cursor arming is: the suite runs its specs
  * in parallel against one process, and a single flag here is one another spec's
  * page load can spend first.
  */
-const failingReads = new Map<string, Set<ContextRead>>();
+const failingCalls = new Map<string, Set<FailableCall>>();
 
-function isFailing(userId: string, read: ContextRead): boolean {
-  return failingReads.get(userId)?.has(read) ?? false;
+/**
+ * A read stays armed; the write is spent on its first refusal.
+ *
+ * The reads are armed to assert what a panel shows while its read is down, which
+ * has to survive however many times the page renders. The write is armed to
+ * assert that a retry carries the key the first attempt used - and a retry that
+ * could never succeed would prove only half of that.
+ */
+function isFailing(userId: string, call: FailableCall): boolean {
+  const armed = failingCalls.get(userId);
+  if (armed === undefined || !armed.has(call)) return false;
+
+  if (call === "add-note") armed.delete(call);
+  return true;
 }
 
 /** Counted so a spec can assert the first page is not fetched twice. */
@@ -303,6 +344,19 @@ function aContact(applicationId: string, seed: Partial<ContactResponse>): Contac
   };
 }
 
+function anActivityEntry(seed: Partial<ActivityEntryResponse>): ActivityEntryResponse {
+  return {
+    id: randomUUID(),
+    kind: "Note",
+    occurredAt: new Date().toISOString(),
+    fromStage: null,
+    toStage: null,
+    transitionKind: null,
+    note: null,
+    ...seed,
+  };
+}
+
 function anInterview(applicationId: string, seed: Partial<InterviewResponse>): InterviewResponse {
   return {
     id: randomUUID(),
@@ -478,21 +532,58 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
-  // Makes one of the detail screen's context reads fail, so the panel that
-  // degrades can be told apart from the page that does not. Armed for the whole
-  // spec rather than one request: the assertion is about what the screen shows,
-  // and a reload should show the same thing.
-  if (method === "POST" && path === "/__test/fail-reads") {
-    const body = await readJson<{ email: string; reads: ContextRead[] }>(request);
+  // Makes one of the detail screen's calls fail, so a panel that degrades can be
+  // told apart from a page that does not, and a retried write from a first
+  // attempt. See `isFailing` for which of them stay armed.
+  if (method === "POST" && path === "/__test/fail-calls") {
+    const body = await readJson<{ email: string; calls: FailableCall[] }>(request);
     const account = accounts.get(accountKey(body?.email ?? ""));
 
     if (body === null || account === undefined) {
-      sendProblem(response, 404, "account.not_found", "Name the account to fail reads for.");
+      sendProblem(response, 404, "account.not_found", "Name the account to fail calls for.");
       return;
     }
 
-    failingReads.set(account.userId, new Set(body.reads));
+    failingCalls.set(account.userId, new Set(body.calls));
     send(response, 204, undefined);
+    return;
+  }
+
+  // Seeds a timeline. The API writes a Created entry with every application, so
+  // a spec that wants history states it here rather than driving transitions
+  // this client cannot make yet.
+  if (method === "POST" && path === "/__test/activity") {
+    const body = await readJson<{
+      email: string;
+      applicationId: string;
+      entries: Partial<ActivityEntryResponse>[];
+    }>(request);
+    const account = accounts.get(accountKey(body?.email ?? ""));
+
+    if (body === null || account === undefined) {
+      sendProblem(response, 404, "account.not_found", "Seed an account before its activity.");
+      return;
+    }
+
+    activity.set(
+      account.userId,
+      body.entries.map((seed) => ({
+        applicationId: body.applicationId,
+        entry: anActivityEntry(seed),
+      })),
+    );
+    send(response, 201, { count: body.entries.length });
+    return;
+  }
+
+  // Every idempotency key this account has sent, in order.
+  if (method === "GET" && path === "/__test/idempotency-keys") {
+    const email = new URL(url, "http://fake-api.test").searchParams.get("email") ?? "";
+    const account = accounts.get(accountKey(email));
+
+    send(response, 200, {
+      keys: account === undefined ? [] : (idempotencyKeys.get(account.userId) ?? []),
+    });
     return;
   }
 
@@ -623,6 +714,107 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
       // the end rather than a cursor pointing past the last row.
       nextCursor: next < all.length ? encodeCursor(sortTag(sortBy, descending), next) : null,
     } satisfies ApplicationPage);
+    return;
+  }
+
+  const activityMatch = ACTIVITY_PATH.exec(path);
+  if (activityMatch !== null && (method === "GET" || method === "POST")) {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    const applicationId = activityMatch[1] ?? "";
+
+    if (method === "POST") {
+      // Recorded before anything can refuse the request, so an armed failure
+      // still leaves the key visible to the spec that is about to retry it.
+      const key = request.headers["idempotency-key"];
+      if (typeof key === "string") {
+        idempotencyKeys.set(userId, [...(idempotencyKeys.get(userId) ?? []), key]);
+      }
+
+      if (isFailing(userId, "add-note")) {
+        sendProblem(response, 500, "internal", "The add-note write is armed to fail.");
+        return;
+      }
+
+      const body = await readJson<{ note: string | null }>(request);
+      const note = body?.note ?? "";
+
+      // The same two refusals the real validator makes, keyed to the same field.
+      if (note.trim() === "") {
+        send(response, 422, {
+          type: "https://jobspect.test/problems/validation",
+          title: "Request failed",
+          status: 422,
+          errors: { note: ["A note is required."] },
+        });
+        return;
+      }
+
+      if (note.length > NOTE_MAX_LENGTH) {
+        send(response, 422, {
+          type: "https://jobspect.test/problems/validation",
+          title: "Request failed",
+          status: 422,
+          errors: { note: [`The note must be ${String(NOTE_MAX_LENGTH)} characters or fewer.`] },
+        });
+        return;
+      }
+
+      // Trimmed by the handler, so a note stored with its whitespace would be a
+      // shape no client will ever read back.
+      const entry = anActivityEntry({ kind: "Note", note: note.trim() });
+      activity.set(userId, [...(activity.get(userId) ?? []), { applicationId, entry }]);
+
+      send(response, 201, entry satisfies ActivityEntryResponse);
+      return;
+    }
+
+    const query = new URL(url, "http://fake-api.test").searchParams;
+    const limit = Number(query.get("limit") ?? 25);
+    const cursor = query.get("cursor");
+
+    let offset = 0;
+    if (cursor !== null) {
+      const decoded = decodeCursor(cursor);
+      if (decoded === null) {
+        send(response, 422, {
+          type: "https://jobspect.test/problems/validation",
+          title: "Request failed",
+          status: 422,
+          errors: { cursor: ["The cursor could not be read."] },
+        });
+        return;
+      }
+
+      offset = decoded.offset;
+    }
+
+    // Newest first, which is the order a history is read in and the reason a new
+    // entry never disturbs a cursor already issued.
+    const all = [...(activity.get(userId) ?? [])]
+      .filter((stored) => stored.applicationId === applicationId)
+      .map((stored) => stored.entry)
+      .sort((a, b) =>
+        a.occurredAt === b.occurredAt
+          ? a.id < b.id
+            ? 1
+            : -1
+          : a.occurredAt < b.occurredAt
+            ? 1
+            : -1,
+      );
+
+    const items = all.slice(offset, offset + limit);
+    const next = offset + items.length;
+
+    send(response, 200, {
+      items,
+      nextCursor: next < all.length ? encodeCursor("activity", next) : null,
+    } satisfies ActivityPage);
     return;
   }
 

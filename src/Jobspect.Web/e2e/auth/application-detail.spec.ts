@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import {
   anEmail,
-  failReads,
+  failCalls,
   registerThroughTheForm,
   seedAccount,
   seedApplications,
@@ -185,7 +185,7 @@ test.describe("the application detail", () => {
   test("loses one panel rather than the page when a context read fails", async ({ page }) => {
     const email = await openTheDetail(page);
 
-    await failReads(email, ["contacts"]);
+    await failCalls(email, ["contacts"]);
     await page.reload();
 
     await expect(page.getByText("Contacts could not be loaded.")).toBeVisible();

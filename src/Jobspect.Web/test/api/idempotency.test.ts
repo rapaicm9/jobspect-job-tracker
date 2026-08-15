@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  IDEMPOTENCY_HEADER,
-  idempotencyHeaders,
-  inFlightDelayMs,
-  newIdempotencyKey,
-} from "@/server/api/idempotency";
+import { newIdempotencyKey } from "@/lib/idempotency";
+import { IDEMPOTENCY_HEADER, idempotencyHeaders, inFlightDelayMs } from "@/server/api/idempotency";
 
 describe("idempotency keys", () => {
   it("mints a distinct key per intent", () => {

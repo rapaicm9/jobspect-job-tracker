@@ -218,17 +218,49 @@ export async function seedInterviews(
 }
 
 /**
- * Makes one of the detail screen's context reads fail for this account.
+ * Makes one of the detail screen's calls fail for this account.
  *
  * Named, so a spec running beside this one cannot be the request that spends it -
- * the same rule the stale-cursor arming follows.
+ * the same rule the stale-cursor arming follows. A read stays armed and the
+ * add-note write is spent on its first refusal; the fake says why.
  */
-export async function failReads(email: string, reads: string[]): Promise<void> {
-  const response = await fetch(`${FAKE_API_ORIGIN}/__test/fail-reads`, {
+export async function failCalls(email: string, calls: string[]): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/fail-calls`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, reads }),
+    body: JSON.stringify({ email, calls }),
   });
 
-  expect(response.status, "the fake API armed the failing read").toBe(204);
+  expect(response.status, "the fake API armed the failing call").toBe(204);
+}
+
+/**
+ * Seeds an application's timeline.
+ *
+ * The API writes a Created entry with every application and a StageChanged entry
+ * with every move, neither of which this client can cause yet - so a spec that
+ * wants history states it rather than driving it.
+ */
+export async function seedActivity(
+  email: string,
+  applicationId: string,
+  entries: Record<string, unknown>[],
+): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/activity`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, applicationId, entries }),
+  });
+
+  expect(response.status, "the fake API seeded the activity").toBe(201);
+}
+
+/** Every `Idempotency-Key` this account has sent, in order. */
+export async function idempotencyKeys(email: string): Promise<string[]> {
+  const response = await fetch(
+    `${FAKE_API_ORIGIN}/__test/idempotency-keys?email=${encodeURIComponent(email)}`,
+  );
+  const body = (await response.json()) as { keys: string[] };
+
+  return body.keys;
 }

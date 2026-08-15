@@ -1,22 +1,19 @@
 import "server-only";
 
+// Spending a key. Forming one lives in `@/lib/idempotency`, because it happens
+// in a client component and nothing under `src/server/` can be imported from
+// there - see that file's header.
+
 /**
  * The header the API reads. It is not in the contract, so `openapi-fetch` will
  * not type it and it has to travel through `headers` by hand.
+ *
+ * Merge it into whatever headers the caller was already given rather than
+ * replacing them: `callAuthenticated` re-issues a call with an `Authorization`
+ * header of its own after a forced refresh, and overwriting that sends the one
+ * retry that matters out unauthenticated.
  */
 export const IDEMPOTENCY_HEADER = "Idempotency-Key";
-
-/**
- * Mints a key for one user intent.
- *
- * Call this where the intent forms - the moment the user commits to the action,
- * in the client component that owns the gesture - and carry the result verbatim
- * through every retry of that same intent. Minting inside the action or inside a
- * retry loop is how one dragged card becomes two transitions.
- */
-export function newIdempotencyKey(): string {
-  return crypto.randomUUID();
-}
 
 export function idempotencyHeaders(key: string): Record<string, string> {
   return { [IDEMPOTENCY_HEADER]: key };

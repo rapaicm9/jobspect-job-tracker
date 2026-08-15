@@ -5,6 +5,7 @@ import {
   anEmail,
   openPalette,
   registerThroughTheForm,
+  seedActivity,
   seedApplications,
   seedContacts,
   seedCustomFields,
@@ -132,6 +133,19 @@ for (const colorScheme of ["light", "dark"] as const) {
       ]);
       await seedInterviews(email, DETAIL_ID, [
         { scheduledAt: "2026-08-20T09:00:00Z", type: "Technical", format: "Remote" },
+      ]);
+      // The timeline carries chips on a different surface from the table's, and
+      // the composer is the only labelled field on the screen.
+      await seedActivity(email, DETAIL_ID, [
+        { kind: "Created", toStage: "Applied", occurredAt: "2026-08-01T09:00:00Z" },
+        {
+          kind: "StageChanged",
+          fromStage: "Applied",
+          toStage: "Offer",
+          transitionKind: "Advance",
+          occurredAt: "2026-08-03T09:00:00Z",
+        },
+        { kind: "Note", note: "Recruiter called.", occurredAt: "2026-08-05T09:00:00Z" },
       ]);
 
       await page.goto(`/applications/${DETAIL_ID}`);

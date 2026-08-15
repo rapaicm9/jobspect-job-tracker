@@ -1,4 +1,5 @@
 export { type ApplicationDetail } from "./application-detail";
+export { ActivityTimeline } from "./components/activity-timeline";
 export { ApplicationsBrowser } from "./components/applications-browser";
 export { ContactsPanel } from "./components/contacts-panel";
 export { CustomFieldPanel } from "./components/custom-field-panel";
@@ -15,6 +16,7 @@ export {
   type SortKey,
 } from "./filters";
 export { getApplication } from "./queries/get-application";
+export { listActivity } from "./queries/list-activity";
 export {
   listApplications,
   listFirstPage,
