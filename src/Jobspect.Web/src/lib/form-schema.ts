@@ -84,6 +84,44 @@ export function requiredDate(missing: string, invalid: string) {
     .pipe(z.iso.date(invalid));
 }
 
+/**
+ * A date and time the form insists on, as `<input type="datetime-local">`
+ * produces it: `yyyy-mm-ddThh:mm`, with seconds on the browsers that add them.
+ *
+ * A wall clock and not an instant - it names no zone, and turning it into one is
+ * `fromZonedInput`'s job at submit, using the account's zone rather than the
+ * browser's. Zod validates the calendar as well as the shape, so the 31st of
+ * April never reaches that conversion.
+ *
+ * Two messages for `requiredDate`'s reason: a blank box and a malformed value are
+ * different things to be told.
+ */
+export function requiredDateTime(missing: string, invalid: string) {
+  return z
+    .string()
+    .transform((value) => value.trim())
+    .refine((value) => value !== "", { message: missing })
+    .pipe(z.iso.datetime({ local: true, error: invalid }));
+}
+
+/**
+ * One of a fixed set, which the form insists on.
+ *
+ * Held as `null` until it is answered, so the control starts on its placeholder
+ * rather than on whichever member happens to be first - a default here is a value
+ * nobody chose, recorded as though they had. The output is narrowed, so a caller
+ * cannot forget that the null was ruled out.
+ */
+export function requiredChoice<const T extends readonly [string, ...string[]]>(
+  values: T,
+  message: string,
+) {
+  return z
+    .enum(values)
+    .nullable()
+    .refine((value): value is T[number] => value !== null, message);
+}
+
 /** What the two money inputs hold between them while they are being typed. */
 export interface MoneyInput {
   amount: string;

@@ -7,6 +7,8 @@ import {
   optionalMoney,
   optionalNumber,
   optionalText,
+  requiredChoice,
+  requiredDateTime,
   requiredText,
 } from "@/lib/form-schema";
 
@@ -88,6 +90,55 @@ describe("a date box", () => {
 
   it("refuses anything that is not one", () => {
     expect(schema.safeParse("15/08/2026").success).toBe(false);
+  });
+});
+
+describe("a date and time box the form insists on", () => {
+  const schema = requiredDateTime("A date and time is required.", "Enter a date and time.");
+
+  it("passes a wall clock through as written", () => {
+    // A wall clock, not an instant: no zone is named here, and placing it in one
+    // is the mapper's job at submit.
+    expect(schema.parse("2026-08-20T09:00")).toBe("2026-08-20T09:00");
+  });
+
+  it("accepts the seconds some browsers add", () => {
+    expect(schema.parse("2026-08-20T09:00:30")).toBe("2026-08-20T09:00:30");
+  });
+
+  it("tells a blank box apart from a broken one", () => {
+    expect(schema.safeParse("  ").error?.issues[0]?.message).toBe("A date and time is required.");
+    expect(schema.safeParse("20 Aug, 9am").error?.issues[0]?.message).toBe(
+      "Enter a date and time.",
+    );
+  });
+
+  it("refuses a date that does not exist", () => {
+    // The calendar is checked here so the conversion downstream never has to
+    // decide what the 31st of April means.
+    expect(schema.safeParse("2026-04-31T09:00").success).toBe(false);
+    expect(schema.safeParse("2026-02-29T09:00").success).toBe(false);
+  });
+});
+
+describe("a choice the form insists on", () => {
+  const schema = requiredChoice(["Remote", "Onsite"] as const, "Choose one.");
+
+  it("refuses the unanswered state the control starts in", () => {
+    // Null rather than "" throughout, so nothing has to invent a sentinel for
+    // "not chosen" and nothing can send one.
+    const result = schema.safeParse(null);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe("Choose one.");
+  });
+
+  it("refuses a member it has never heard of", () => {
+    expect(schema.safeParse("Hologram").success).toBe(false);
+  });
+
+  it("passes a member through as the contract spells it", () => {
+    expect(schema.parse("Onsite")).toBe("Onsite");
   });
 });
 

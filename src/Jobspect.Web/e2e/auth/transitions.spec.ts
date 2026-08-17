@@ -48,8 +48,21 @@ async function openAt(page: Page, stage: string): Promise<string> {
 }
 
 async function openMenu(page: Page) {
-  await page.getByRole("button", { name: "Move" }).click();
-  return page.getByRole("menu");
+  const trigger = page.getByRole("button", { name: "Move" });
+  const menu = page.getByRole("menu");
+
+  // The gesture is retried rather than the assertion, because this control only
+  // works once its component has hydrated and a click landing before that is
+  // simply lost - a button has no bare-href fallback the way the nav's links do.
+  // Under load that showed up as a menu that never opened, on whichever spec
+  // happened to be unlucky, which is the shape the nav spec was hardened out of
+  // rather than retried at.
+  await expect(async () => {
+    await trigger.click();
+    await expect(menu).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+
+  return menu;
 }
 
 test.describe("the transition menu", () => {

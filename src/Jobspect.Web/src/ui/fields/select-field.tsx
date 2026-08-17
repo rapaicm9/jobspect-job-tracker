@@ -25,6 +25,16 @@ export interface SelectFieldProps<
   options: readonly SelectOption[];
   /** What an unanswered field reads as, both in the list and on the trigger. */
   noneLabel?: string;
+  /**
+   * Makes the field a required choice: no "Not set" to pick, and this shown on
+   * the trigger until something is.
+   *
+   * A required field that offers an empty option and then refuses it wastes a
+   * submit to say what the list could have said by not being there. Insisting on
+   * an answer is still the schema's job - the form state holds `null` until one
+   * is given either way.
+   */
+  placeholder?: string;
 }
 
 /**
@@ -50,12 +60,15 @@ export function SelectField<
   description,
   options,
   noneLabel = "Not set",
+  placeholder,
 }: SelectFieldProps<TFieldValues, TName, TTransformedValues>) {
   const { field, fieldState } = useController({ control, name });
+  const required = placeholder !== undefined;
 
   // Given to the root as well as rendered, which is what lets the trigger show
-  // a label rather than the raw contract value it is keyed by.
-  const items = [{ value: null, label: noneLabel }, ...options];
+  // a label rather than the raw contract value it is keyed by. A null item's
+  // label here would override the placeholder, so a required field states none.
+  const items = required ? options : [{ value: null, label: noneLabel }, ...options];
 
   return (
     <FieldShell label={label} description={description} messages={messagesFor(fieldState.error)}>
@@ -68,11 +81,11 @@ export function SelectField<
           disabled={field.disabled}
         >
           <SelectTrigger {...binding} className="w-full" onBlur={field.onBlur} ref={field.ref}>
-            <SelectValue />
+            <SelectValue placeholder={placeholder} />
           </SelectTrigger>
 
           <SelectContent>
-            <SelectItem value={null}>{noneLabel}</SelectItem>
+            {!required && <SelectItem value={null}>{noneLabel}</SelectItem>}
             {options.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}

@@ -117,7 +117,11 @@ export default async function ApplicationDetailPage({
           </div>
 
           <div className="flex flex-col gap-6">
-            <InterviewsPanel interviews={interviews} timeZoneId={timeZoneId} />
+            <InterviewsPanel
+              applicationId={application.id}
+              interviews={interviews}
+              timeZoneId={timeZoneId}
+            />
             <ContactsPanel contacts={contacts} />
             <CustomFieldPanel values={application.customFields} definitions={definitions} />
           </div>

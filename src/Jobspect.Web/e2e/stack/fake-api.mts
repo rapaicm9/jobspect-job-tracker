@@ -36,6 +36,8 @@ type PlanStatusResponse = components["schemas"]["PlanStatusResponse"];
 type PlanTier = components["schemas"]["PlanTier"];
 type CreateApplicationRequest = components["schemas"]["CreateApplicationRequest"];
 type UpdateApplicationRequest = components["schemas"]["UpdateApplicationRequest"];
+type CreateInterviewRequest = components["schemas"]["CreateInterviewRequest"];
+type UpdateInterviewRequest = components["schemas"]["UpdateInterviewRequest"];
 type RegisterRequest = components["schemas"]["RegisterRequest"];
 type LoginRequest = components["schemas"]["LoginRequest"];
 type RefreshRequest = components["schemas"]["RefreshRequest"];
@@ -51,12 +53,14 @@ type FailableCall =
   | "interviews"
   | "add-note"
   | "create-application"
+  | "create-interview"
   | "transition-in-flight"
   | "transition-unavailable"
   | "transition-illegal";
 
 const APPLICATION_PATH = /^\/api\/v1\/applications\/([^/]+)$/;
 const INTERVIEWS_PATH = /^\/api\/v1\/applications\/([^/]+)\/interviews$/;
+const INTERVIEW_PATH = /^\/api\/v1\/applications\/([^/]+)\/interviews\/([^/]+)$/;
 const ACTIVITY_PATH = /^\/api\/v1\/applications\/([^/]+)\/activity$/;
 const TRANSITION_PATH = /^\/api\/v1\/applications\/([^/]+)\/transition$/;
 
@@ -155,6 +159,9 @@ const plans = new Map<string, PlanTier>();
  * carrying what they came in with.
  */
 const lastUpdates = new Map<string, unknown>();
+
+/** The same question for a round, whose replace clears its notes just as easily. */
+const lastInterviewWrites = new Map<string, unknown>();
 
 /**
  * The timeline carries no application id on the wire - the whole feed is read
@@ -546,6 +553,50 @@ function anActivityEntry(seed: Partial<ActivityEntryResponse>): ActivityEntryRes
     note: null,
     ...seed,
   };
+}
+
+const INTERVIEW_TYPES = ["PhoneScreen", "Technical", "HrInterview", "Onsite", "Other"];
+const INTERVIEW_FORMATS = ["Remote", "Onsite", "Phone"];
+const INTERVIEW_OUTCOMES = ["Pending", "Passed", "Failed", "Cancelled"];
+
+/**
+ * The shape rules the real handlers apply to a round, implemented rather than
+ * armed by a seam - the same argument `refuseUpdate` records.
+ *
+ * Every field is checked before answering, because the real one collects its
+ * complaints into a single dictionary and a form that renders only the first
+ * would look right against a fake that sent only the first.
+ *
+ * The outcome is the update slice's alone: scheduling has no such field, since a
+ * new round is always pending.
+ */
+function refuseInterviewWrite(
+  body: CreateInterviewRequest | UpdateInterviewRequest,
+  outcome: string | null | undefined,
+): Record<string, string[]> | null {
+  const errors: Record<string, string[]> = {};
+
+  if (body.scheduledAt === null || body.scheduledAt === "") {
+    errors.scheduledAt = ["A scheduled time is required."];
+  }
+
+  if (body.type === null || !INTERVIEW_TYPES.includes(body.type)) {
+    errors.type = ["The type must be one of PhoneScreen, Technical, HrInterview, Onsite or Other."];
+  }
+
+  if (body.format === null || !INTERVIEW_FORMATS.includes(body.format)) {
+    errors.format = ["The format must be one of Remote, Onsite or Phone."];
+  }
+
+  if (outcome !== undefined && (outcome === null || !INTERVIEW_OUTCOMES.includes(outcome))) {
+    errors.outcome = ["The outcome must be one of Pending, Passed, Failed or Cancelled."];
+  }
+
+  if ((body.notes?.length ?? 0) > NOTE_MAX_LENGTH) {
+    errors.notes = [`The notes must be ${String(NOTE_MAX_LENGTH)} characters or fewer.`];
+  }
+
+  return Object.keys(errors).length === 0 ? null : errors;
 }
 
 function anInterview(applicationId: string, seed: Partial<InterviewResponse>): InterviewResponse {
@@ -1179,6 +1230,111 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  if (method === "POST" && interviewsMatch !== null) {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    // Recorded before the arming is checked, so a spec watching a retry sees the
+    // key of the attempt that failed as well as the one that worked.
+    const key = request.headers["idempotency-key"];
+    if (typeof key === "string") {
+      idempotencyKeys.set(userId, [...(idempotencyKeys.get(userId) ?? []), key]);
+    }
+
+    if (isFailing(userId, "create-interview")) {
+      sendProblem(response, 500, "internal", "The interview write is armed to fail.");
+      return;
+    }
+
+    const applicationId = interviewsMatch[1] ?? "";
+    const body = await readJson<CreateInterviewRequest>(request);
+
+    if (body === null) {
+      sendProblem(response, 422, "interview.invalid", "A body is required.");
+      return;
+    }
+
+    lastInterviewWrites.set(userId, body);
+
+    // The parent has to be the caller's own or the whole route is absent, which
+    // is what makes a round on somebody else's application a 404 rather than a
+    // refusal naming it.
+    if (!(applications.get(userId) ?? []).some((application) => application.id === applicationId)) {
+      sendProblem(response, 404, "application.not_found", "No such application for this account.");
+      return;
+    }
+
+    const errors = refuseInterviewWrite(body, undefined);
+    if (errors !== null) {
+      sendValidationProblem(response, errors);
+      return;
+    }
+
+    const created = anInterview(applicationId, {
+      scheduledAt: body.scheduledAt ?? "",
+      type: body.type as InterviewResponse["type"],
+      format: body.format as InterviewResponse["format"],
+      // Always pending. The request has no outcome and the real handler writes
+      // this one rather than reading it.
+      outcome: "Pending",
+      notes: body.notes,
+    });
+
+    interviews.set(userId, [...(interviews.get(userId) ?? []), created]);
+    send(response, 201, created satisfies InterviewResponse);
+    return;
+  }
+
+  const interviewMatch = INTERVIEW_PATH.exec(path);
+  if (method === "PUT" && interviewMatch !== null) {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    const body = await readJson<UpdateInterviewRequest>(request);
+    if (body === null) {
+      sendProblem(response, 422, "interview.invalid", "A body is required.");
+      return;
+    }
+
+    // Recorded before any refusal, so a spec can read what went out even when the
+    // answer was no.
+    lastInterviewWrites.set(userId, body);
+
+    const stored = (interviews.get(userId) ?? []).find(
+      (interview) =>
+        interview.id === interviewMatch[2] && interview.applicationId === interviewMatch[1],
+    );
+
+    if (stored === undefined) {
+      sendProblem(response, 404, "interview.not_found", "No such interview for this account.");
+      return;
+    }
+
+    const errors = refuseInterviewWrite(body, body.outcome);
+    if (errors !== null) {
+      sendValidationProblem(response, errors);
+      return;
+    }
+
+    // Every field, because that is what a replace means - and the notes are the
+    // one a client is most likely to leave out.
+    stored.scheduledAt = body.scheduledAt ?? "";
+    stored.type = body.type as InterviewResponse["type"];
+    stored.format = body.format as InterviewResponse["format"];
+    stored.outcome = body.outcome as InterviewResponse["outcome"];
+    stored.notes = body.notes;
+    stored.updatedAt = new Date().toISOString();
+
+    send(response, 200, stored satisfies InterviewResponse);
+    return;
+  }
+
   if (method === "POST" && path === "/__test/plan") {
     const body = await readJson<{ email: string; tier: PlanTier }>(request);
     const account = accounts.get(accountKey(body?.email ?? ""));
@@ -1201,6 +1357,16 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
     send(response, 200, {
       body: account === undefined ? null : (lastUpdates.get(account.userId) ?? null),
+    });
+    return;
+  }
+
+  if (method === "GET" && path === "/__test/last-interview-write") {
+    const email = new URL(url, "http://fake-api.test").searchParams.get("email") ?? "";
+    const account = accounts.get(accountKey(email));
+
+    send(response, 200, {
+      body: account === undefined ? null : (lastInterviewWrites.get(account.userId) ?? null),
     });
     return;
   }

@@ -7,6 +7,31 @@ import {
   type InterviewType,
 } from "@/lib/enums";
 
+// The enum members are one word to the API and two to a reader. Here rather than
+// in the panel because the form offers the same members as options, and a select
+// naming a round differently from the row it came off would read as two things.
+
+export const INTERVIEW_TYPE_LABELS: Record<InterviewType, string> = {
+  PhoneScreen: "Phone screen",
+  Technical: "Technical",
+  HrInterview: "HR interview",
+  Onsite: "On-site",
+  Other: "Other",
+};
+
+export const INTERVIEW_FORMAT_LABELS: Record<InterviewFormat, string> = {
+  Remote: "Remote",
+  Onsite: "On-site",
+  Phone: "Phone",
+};
+
+export const INTERVIEW_OUTCOME_LABELS: Record<InterviewOutcome, string> = {
+  Pending: "Pending",
+  Passed: "Passed",
+  Failed: "Failed",
+  Cancelled: "Cancelled",
+};
+
 /** One interview under an application, as the panel renders it. */
 export interface Interview {
   id: string;

@@ -297,3 +297,21 @@ export async function lastUpdateBody(email: string): Promise<Record<string, unkn
 
   return body.body;
 }
+
+/**
+ * The body the last interview write sent, for the same reason.
+ *
+ * A round's replace clears its notes as easily as an application's clears its
+ * fields, and here the trap is narrower: an edit that only records how a round
+ * went still has to send back the time, the kind and the format it came in with.
+ */
+export async function lastInterviewWriteBody(
+  email: string,
+): Promise<Record<string, unknown> | null> {
+  const response = await fetch(
+    `${FAKE_API_ORIGIN}/__test/last-interview-write?email=${encodeURIComponent(email)}`,
+  );
+  const body = (await response.json()) as { body: Record<string, unknown> | null };
+
+  return body.body;
+}
