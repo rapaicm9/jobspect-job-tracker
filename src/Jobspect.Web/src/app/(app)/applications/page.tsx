@@ -36,10 +36,18 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/app
         </div>
 
         <div className="flex items-center gap-2">
-          {!empty && <ViewPreferencesForm preferences={preferences} />}
-          {/* Always rendered, including on a list filtered down to nothing -
-              which shows the table rather than the empty state below. */}
-          <AddApplicationButton campaignId={filters.campaignId} />
+          {/* Both hidden on the same condition, and the second one matters for a
+              reason the first does not: the empty state below carries its own
+              call to action, and two links reading "Add application" on one
+              screen are heard twice by anybody navigating by link. A list
+              filtered down to nothing is not this case - it shows the table, and
+              keeps both controls. */}
+          {!empty && (
+            <>
+              <ViewPreferencesForm preferences={preferences} />
+              <AddApplicationButton campaignId={filters.campaignId} />
+            </>
+          )}
         </div>
       </div>
 

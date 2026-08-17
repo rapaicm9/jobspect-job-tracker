@@ -37,9 +37,14 @@ test.describe("adding an application", () => {
 
     await expect(page.getByText("No applications yet")).toBeVisible();
 
-    // Two affordances on an empty list - the header and the panel - and both
-    // have to arrive somewhere.
-    await page.getByRole("link", { name: "Add application" }).last().click();
+    // Exactly one, and the count is the assertion: the empty state carries its
+    // own call to action, so a header button beside it would be a second link
+    // reading the same words - heard twice by anybody navigating by link, and
+    // the reason a spec here once needed `.last()` to say which it meant.
+    const add = page.getByRole("link", { name: "Add application" });
+    await expect(add).toHaveCount(1);
+
+    await add.click();
     await expect(page).toHaveURL(/\/applications\/new$/);
   });
 
