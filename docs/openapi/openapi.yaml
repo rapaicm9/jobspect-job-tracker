@@ -3076,7 +3076,7 @@ components:
       enum:
         - PhoneScreen
         - Technical
-        - Behavioural
+        - HrInterview
         - Onsite
         - Other
     LoginRequest:

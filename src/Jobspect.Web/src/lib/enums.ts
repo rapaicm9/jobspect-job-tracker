@@ -42,8 +42,8 @@ export const ACTIVITY_KINDS = ["Created", "StageChanged", "Note"] as const;
 export const INTERVIEW_TYPES = [
   "PhoneScreen",
   "Technical",
-  // British spelling, and it travels verbatim.
-  "Behavioural",
+  // Casing and all: the members travel verbatim, so this is not HRInterview.
+  "HrInterview",
   "Onsite",
   "Other",
 ] as const;

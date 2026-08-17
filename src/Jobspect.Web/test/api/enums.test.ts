@@ -67,10 +67,11 @@ describe("the other guards", () => {
     expect(toWorkMode(null)).toBeNull();
   });
 
-  it("carry the spellings that travel verbatim", () => {
-    // British spelling on the wire, and it is not ours to normalise.
-    expect(toInterviewType("Behavioural")).toBe("Behavioural");
-    expect(toInterviewType("Behavioral")).toBeNull();
+  it("carry the casings that travel verbatim", () => {
+    // The API applies no naming policy, so an initialism keeps the casing the
+    // member was declared with and guessing at a tidier one finds nothing.
+    expect(toInterviewType("HrInterview")).toBe("HrInterview");
+    expect(toInterviewType("HRInterview")).toBeNull();
   });
 
   it("cover entitlements even though the contract does not name them", () => {

@@ -44,7 +44,7 @@ builder.Services.AddProblemDetails();
 // carry its own copy of it. With the converter registered the responses can hold
 // the enums themselves and the document carries the names, which is the same
 // JSON described honestly. No naming policy: the members travel verbatim, so
-// Behavioural keeps its spelling and Url is not URL.
+// HrInterview keeps its casing and Url is not URL.
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict;

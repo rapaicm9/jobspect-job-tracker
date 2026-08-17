@@ -19,7 +19,7 @@ internal static class InterviewFieldValidation
 
         if (!ParsesTo<InterviewType>(fields.Type))
         {
-            errors.Add("type", "The type must be one of PhoneScreen, Technical, Behavioural, Onsite or Other.");
+            errors.Add("type", "The type must be one of PhoneScreen, Technical, HrInterview, Onsite or Other.");
         }
 
         if (!ParsesTo<InterviewFormat>(fields.Format))

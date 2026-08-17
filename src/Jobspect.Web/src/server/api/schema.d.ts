@@ -760,7 +760,7 @@ export interface components {
             updatedAt: null | string;
         };
         /** @enum {unknown} */
-        InterviewType: "PhoneScreen" | "Technical" | "Behavioural" | "Onsite" | "Other";
+        InterviewType: "PhoneScreen" | "Technical" | "HrInterview" | "Onsite" | "Other";
         LoginRequest: {
             email: null | string;
             password: null | string;
