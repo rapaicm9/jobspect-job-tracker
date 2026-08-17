@@ -321,6 +321,22 @@ export async function lastUpdateBody(email: string): Promise<Record<string, unkn
 }
 
 /**
+ * The body the last contact write sent.
+ *
+ * The two links are why this matters here: a contact's application and company
+ * are carried by every replace and rendered by nothing, so dropping one changes
+ * the record and leaves the screen looking exactly as it did.
+ */
+export async function lastContactWriteBody(email: string): Promise<Record<string, unknown> | null> {
+  const response = await fetch(
+    `${FAKE_API_ORIGIN}/__test/last-contact-write?email=${encodeURIComponent(email)}`,
+  );
+  const body = (await response.json()) as { body: Record<string, unknown> | null };
+
+  return body.body;
+}
+
+/**
  * The body the last interview write sent, for the same reason.
  *
  * A round's replace clears its notes as easily as an application's clears its

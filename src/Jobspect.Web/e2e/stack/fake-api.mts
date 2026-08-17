@@ -38,6 +38,8 @@ type CreateApplicationRequest = components["schemas"]["CreateApplicationRequest"
 type UpdateApplicationRequest = components["schemas"]["UpdateApplicationRequest"];
 type CreateInterviewRequest = components["schemas"]["CreateInterviewRequest"];
 type UpdateInterviewRequest = components["schemas"]["UpdateInterviewRequest"];
+type CreateContactRequest = components["schemas"]["CreateContactRequest"];
+type UpdateContactRequest = components["schemas"]["UpdateContactRequest"];
 type RegisterRequest = components["schemas"]["RegisterRequest"];
 type LoginRequest = components["schemas"]["LoginRequest"];
 type RefreshRequest = components["schemas"]["RefreshRequest"];
@@ -54,6 +56,7 @@ type FailableCall =
   | "add-note"
   | "create-application"
   | "create-interview"
+  | "create-contact"
   | "transition-in-flight"
   | "transition-unavailable"
   | "transition-illegal";
@@ -61,6 +64,7 @@ type FailableCall =
 const APPLICATION_PATH = /^\/api\/v1\/applications\/([^/]+)$/;
 const INTERVIEWS_PATH = /^\/api\/v1\/applications\/([^/]+)\/interviews$/;
 const INTERVIEW_PATH = /^\/api\/v1\/applications\/([^/]+)\/interviews\/([^/]+)$/;
+const CONTACT_PATH = /^\/api\/v1\/contacts\/([^/]+)$/;
 const ACTIVITY_PATH = /^\/api\/v1\/applications\/([^/]+)\/activity$/;
 const TRANSITION_PATH = /^\/api\/v1\/applications\/([^/]+)\/transition$/;
 
@@ -162,6 +166,9 @@ const lastUpdates = new Map<string, unknown>();
 
 /** The same question for a round, whose replace clears its notes just as easily. */
 const lastInterviewWrites = new Map<string, unknown>();
+
+/** And for a contact, whose replace also carries two links nothing renders. */
+const lastContactWrites = new Map<string, unknown>();
 
 /**
  * The timeline carries no application id on the wire - the whole feed is read
@@ -570,6 +577,60 @@ const INTERVIEW_OUTCOMES = ["Pending", "Passed", "Failed", "Cancelled"];
  * The outcome is the update slice's alone: scheduling has no such field, since a
  * new round is always pending.
  */
+const CONTACT_ROLES = ["Recruiter", "HiringManager", "Interviewer", "Referral", "Other"];
+
+/**
+ * The shape rules the real handlers apply to a contact, implemented rather than
+ * armed - the same argument `refuseUpdate` and `refuseInterviewWrite` record.
+ *
+ * The email and phone checks are the real ones: shape, not deliverability. A
+ * client that restated either would refuse values the API accepts, so the fake
+ * has to answer them for a spec to prove the client does not.
+ */
+function refuseContactWrite(
+  body: CreateContactRequest | UpdateContactRequest,
+): Record<string, string[]> | null {
+  const errors: Record<string, string[]> = {};
+
+  // Keyed to applicationId, as the real validator keys it: one of the two links
+  // has to be there and this is the one a client can do something about.
+  if (body.applicationId === null && body.companyId === null) {
+    errors.applicationId = ["A contact must be linked to an application, a company, or both."];
+  }
+
+  if (body.name === null || body.name.trim() === "") {
+    errors.name = ["A name is required."];
+  }
+
+  if (body.role !== null && !CONTACT_ROLES.includes(body.role)) {
+    errors.role = [
+      "The role must be one of Recruiter, HiringManager, Interviewer, Referral or Other.",
+    ];
+  }
+
+  // One @ with something either side and no spaces, which is all the API claims
+  // to check - it never sends mail.
+  if (body.email !== null && body.email !== "" && !/^[^\s@]+@[^\s@]+$/.test(body.email)) {
+    errors.email = ["The email address is not valid."];
+  }
+
+  // Digits and the usual separators, at least three digits. Kept loose on
+  // purpose: the API stores the number, it does not dial it.
+  if (
+    body.phone !== null &&
+    body.phone !== "" &&
+    (!/^[\d+\-().\s]+$/.test(body.phone) || (body.phone.match(/\d/g) ?? []).length < 3)
+  ) {
+    errors.phone = ["The phone number is not valid."];
+  }
+
+  if ((body.notes?.length ?? 0) > NOTE_MAX_LENGTH) {
+    errors.notes = [`The notes must be ${String(NOTE_MAX_LENGTH)} characters or fewer.`];
+  }
+
+  return Object.keys(errors).length === 0 ? null : errors;
+}
+
 function refuseInterviewWrite(
   body: CreateInterviewRequest | UpdateInterviewRequest,
   outcome: string | null | undefined,
@@ -1361,6 +1422,16 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  if (method === "GET" && path === "/__test/last-contact-write") {
+    const email = new URL(url, "http://fake-api.test").searchParams.get("email") ?? "";
+    const account = accounts.get(accountKey(email));
+
+    send(response, 200, {
+      body: account === undefined ? null : (lastContactWrites.get(account.userId) ?? null),
+    });
+    return;
+  }
+
   if (method === "GET" && path === "/__test/last-interview-write") {
     const email = new URL(url, "http://fake-api.test").searchParams.get("email") ?? "";
     const account = accounts.get(accountKey(email));
@@ -1482,6 +1553,114 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
       .sort((a, b) => (a.name < b.name ? -1 : 1));
 
     send(response, 200, { items, nextCursor: null } satisfies ContactPage);
+    return;
+  }
+
+  if (method === "POST" && path === "/api/v1/contacts") {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    // Recorded before the arming is checked, so a spec watching a retry sees the
+    // key of the attempt that failed as well as the one that worked.
+    const key = request.headers["idempotency-key"];
+    if (typeof key === "string") {
+      idempotencyKeys.set(userId, [...(idempotencyKeys.get(userId) ?? []), key]);
+    }
+
+    if (isFailing(userId, "create-contact")) {
+      sendProblem(response, 500, "internal", "The contact write is armed to fail.");
+      return;
+    }
+
+    const body = await readJson<CreateContactRequest>(request);
+    if (body === null) {
+      sendProblem(response, 422, "contact.invalid", "A body is required.");
+      return;
+    }
+
+    lastContactWrites.set(userId, body);
+
+    const errors = refuseContactWrite(body);
+    if (errors !== null) {
+      sendValidationProblem(response, errors);
+      return;
+    }
+
+    // A link the caller does not own is the contact-scoped refusal rather than a
+    // 404: the route is not the application's, so nothing about it is absent.
+    if (
+      body.applicationId !== null &&
+      !(applications.get(userId) ?? []).some((application) => application.id === body.applicationId)
+    ) {
+      sendProblem(
+        response,
+        422,
+        "contact.unknown_application",
+        "That application does not exist for this account.",
+      );
+      return;
+    }
+
+    const created = aContact(body.applicationId ?? "", {
+      companyId: body.companyId,
+      name: body.name ?? "",
+      role: body.role as ContactResponse["role"],
+      email: body.email,
+      phone: body.phone,
+      notes: body.notes,
+    });
+
+    contacts.set(userId, [...(contacts.get(userId) ?? []), created]);
+    send(response, 201, created satisfies ContactResponse);
+    return;
+  }
+
+  const contactMatch = CONTACT_PATH.exec(path);
+  if (method === "PUT" && contactMatch !== null) {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    const body = await readJson<UpdateContactRequest>(request);
+    if (body === null) {
+      sendProblem(response, 422, "contact.invalid", "A body is required.");
+      return;
+    }
+
+    // Recorded before any refusal, so a spec can read what went out even when the
+    // answer was no.
+    lastContactWrites.set(userId, body);
+
+    const stored = (contacts.get(userId) ?? []).find((contact) => contact.id === contactMatch[1]);
+
+    if (stored === undefined) {
+      sendProblem(response, 404, "contact.not_found", "No such contact for this account.");
+      return;
+    }
+
+    const errors = refuseContactWrite(body);
+    if (errors !== null) {
+      sendValidationProblem(response, errors);
+      return;
+    }
+
+    // Every field, because that is what a replace means - the two links most of
+    // all, since nothing on the screen would look wrong if they were dropped.
+    stored.applicationId = body.applicationId;
+    stored.companyId = body.companyId;
+    stored.name = body.name ?? "";
+    stored.role = body.role as ContactResponse["role"];
+    stored.email = body.email;
+    stored.phone = body.phone;
+    stored.notes = body.notes;
+    stored.updatedAt = new Date().toISOString();
+
+    send(response, 200, stored satisfies ContactResponse);
     return;
   }
 

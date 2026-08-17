@@ -122,7 +122,7 @@ export default async function ApplicationDetailPage({
               interviews={interviews}
               timeZoneId={timeZoneId}
             />
-            <ContactsPanel contacts={contacts} />
+            <ContactsPanel applicationId={application.id} contacts={contacts} />
             <CustomFieldPanel values={application.customFields} definitions={definitions} />
           </div>
         </div>
