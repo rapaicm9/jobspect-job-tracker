@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import {
   anEmail,
   openPalette,
+  openTransitionMenu,
   registerThroughTheForm,
   seedActivity,
   seedApplications,
@@ -152,8 +153,7 @@ for (const colorScheme of ["light", "dark"] as const) {
 
       // Open, because a closed menu sweeps nothing and a menu over a header is
       // the most accessibility-sensitive thing on this screen.
-      await page.getByRole("button", { name: "Move" }).click();
-      await expect(page.getByRole("menu")).toBeVisible();
+      await openTransitionMenu(page);
 
       const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
 

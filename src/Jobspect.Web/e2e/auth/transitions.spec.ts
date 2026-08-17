@@ -4,6 +4,7 @@ import {
   anEmail,
   failCalls,
   idempotencyKeys,
+  openTransitionMenu,
   registerThroughTheForm,
   seedActivity,
   seedApplications,
@@ -47,29 +48,11 @@ async function openAt(page: Page, stage: string): Promise<string> {
   return email;
 }
 
-async function openMenu(page: Page) {
-  const trigger = page.getByRole("button", { name: "Move" });
-  const menu = page.getByRole("menu");
-
-  // The gesture is retried rather than the assertion, because this control only
-  // works once its component has hydrated and a click landing before that is
-  // simply lost - a button has no bare-href fallback the way the nav's links do.
-  // Under load that showed up as a menu that never opened, on whichever spec
-  // happened to be unlucky, which is the shape the nav spec was hardened out of
-  // rather than retried at.
-  await expect(async () => {
-    await trigger.click();
-    await expect(menu).toBeVisible({ timeout: 1_000 });
-  }).toPass({ timeout: 15_000 });
-
-  return menu;
-}
-
 test.describe("the transition menu", () => {
   test("offers only the moves the pipeline allows from here", async ({ page }) => {
     await openAt(page, "Applied");
 
-    const menu = await openMenu(page);
+    const menu = await openTransitionMenu(page);
 
     // Forward, with skips.
     await expect(menu.getByRole("menuitem", { name: "Screening" })).toBeVisible();
@@ -85,7 +68,7 @@ test.describe("the transition menu", () => {
   test("offers Accepted once there is an offer to accept", async ({ page }) => {
     await openAt(page, "Offer");
 
-    const menu = await openMenu(page);
+    const menu = await openTransitionMenu(page);
 
     await expect(menu.getByRole("menuitem", { name: "Accepted" })).toBeVisible();
     // Nothing is further forward than Offer.
@@ -97,7 +80,7 @@ test.describe("the transition menu", () => {
   }) => {
     await openAt(page, "Rejected");
 
-    const menu = await openMenu(page);
+    const menu = await openTransitionMenu(page);
 
     await expect(menu.getByRole("menuitem", { name: "Applied" })).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: "Ghosted" })).toBeVisible();
@@ -108,7 +91,7 @@ test.describe("the transition menu", () => {
   test("separates closing out from moving along", async ({ page }) => {
     await openAt(page, "Screening");
 
-    const menu = await openMenu(page);
+    const menu = await openTransitionMenu(page);
 
     // Closing is a different kind of move, and the menu says so rather than
     // listing eight destinations as one.
@@ -121,7 +104,7 @@ test.describe("moving an application", () => {
   test("updates the stage and records it on the timeline without a reload", async ({ page }) => {
     await openAt(page, "Applied");
 
-    const menu = await openMenu(page);
+    const menu = await openTransitionMenu(page);
     await menu.getByRole("menuitem", { name: "Interview" }).click();
 
     // The header is server-rendered and the timeline is a client cache; a move
@@ -139,7 +122,7 @@ test.describe("moving an application", () => {
   test("reads a closure as a closure", async ({ page }) => {
     await openAt(page, "Screening");
 
-    const menu = await openMenu(page);
+    const menu = await openTransitionMenu(page);
     await menu.getByRole("menuitem", { name: "Withdrawn" }).click();
 
     await expect(feed(page)).toContainText("Closed as", { timeout: 15_000 });
@@ -152,7 +135,7 @@ test.describe("moving an application", () => {
     const email = await openAt(page, "Applied");
     await failCalls(email, ["transition-illegal"]);
 
-    const menu = await openMenu(page);
+    const menu = await openTransitionMenu(page);
     await menu.getByRole("menuitem", { name: "Screening" }).click();
 
     await expect(refusal(page)).toContainText(
@@ -165,7 +148,7 @@ test.describe("moving an application", () => {
     const email = await openAt(page, "Applied");
     await failCalls(email, ["transition-in-flight"]);
 
-    const menu = await openMenu(page);
+    const menu = await openTransitionMenu(page);
     await menu.getByRole("menuitem", { name: "Screening" }).click();
 
     // The retry is the action's, not the user's: one gesture, two requests, one
@@ -181,7 +164,7 @@ test.describe("moving an application", () => {
     const email = await openAt(page, "Applied");
     await failCalls(email, ["transition-unavailable"]);
 
-    const menu = await openMenu(page);
+    const menu = await openTransitionMenu(page);
     await menu.getByRole("menuitem", { name: "Screening" }).click();
 
     // Nothing about the request was wrong, so it must not read like a validation

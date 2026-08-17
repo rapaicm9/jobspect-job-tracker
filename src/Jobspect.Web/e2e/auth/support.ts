@@ -152,6 +152,28 @@ export async function openPalette(page: Page): Promise<void> {
 }
 
 /**
+ * Opens the transition menu on the application detail screen.
+ *
+ * Here rather than in one spec because two of them open it, and the reason it
+ * needs a helper at all is the reason `openPalette` does: the control only works
+ * once its component has hydrated, and a click landing before that is simply
+ * lost. A button has no bare href to fall back on the way a link does, so the
+ * gesture is retried rather than the assertion - which is what makes it
+ * independent of hydration order rather than lucky about it.
+ */
+export async function openTransitionMenu(page: Page) {
+  const trigger = page.getByRole("button", { name: "Move" });
+  const menu = page.getByRole("menu");
+
+  await expect(async () => {
+    await trigger.click();
+    await expect(menu).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+
+  return menu;
+}
+
+/**
  * Seeds an account straight into the fake API, bypassing the register form.
  *
  * The zone is worth naming when a spec asserts how an instant reads: the form
