@@ -1,7 +1,17 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { anEmail, openPalette, registerThroughTheForm, seedApplications } from "./support";
+import {
+  anEmail,
+  openPalette,
+  openTransitionMenu,
+  registerThroughTheForm,
+  seedActivity,
+  seedApplications,
+  seedContacts,
+  seedCustomFields,
+  seedInterviews,
+} from "./support";
 
 /**
  * Repeated rather than imported from `enums.ts`, which opens with
@@ -25,6 +35,11 @@ const STAGES = [
 // gate only ever saw the marketing pages.
 
 const ROUTES = ["/board", "/applications", "/analytics", "/reminders", "/settings"];
+
+// The detail route needs an id, so it cannot join the list above. Fixed rather
+// than generated, so the seed and the address agree.
+const DETAIL_ID = "55555555-5555-4555-8555-555555555555";
+const DETAIL_FIELD = "66666666-6666-4666-8666-666666666666";
 
 // target-size (2.5.8) is off unless the WCAG 2.2 ruleset is asked for by name.
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
@@ -86,6 +101,66 @@ for (const colorScheme of ["light", "dark"] as const) {
           `axe found violations on ${route}`,
         ).toEqual([]);
       }
+    });
+
+    test("the application detail has none with every panel populated", async ({ page }) => {
+      const email = anEmail();
+      await registerThroughTheForm(page, email);
+
+      // Every region filled, because an empty panel sweeps nothing: the contrast
+      // of a chip, a link inside a definition list and a rendered instant are all
+      // things only a populated screen has.
+      await seedCustomFields(email, [{ id: DETAIL_FIELD, label: "Funding stage", type: "Text" }]);
+      await seedApplications(email, [
+        {
+          id: DETAIL_ID,
+          role: "Frontend Engineer",
+          companyName: "Acme",
+          stage: "Offer",
+          appliedDate: "2026-08-01",
+          applicationDeadline: "2026-09-01",
+          offerDecisionDeadline: "2026-09-10",
+          source: "LinkedIn",
+          compensation: { amount: 65000, currency: "GBP" },
+          location: "London",
+          workMode: "Hybrid",
+          postingUrl: "https://acme.test/jobs/1",
+          cvLabel: "CV v3",
+          customFields: { [DETAIL_FIELD]: "Series B" },
+        },
+      ]);
+      await seedContacts(email, DETAIL_ID, [
+        { name: "Dana Whitfield", role: "HiringManager", email: "dana@acme.test" },
+      ]);
+      await seedInterviews(email, DETAIL_ID, [
+        { scheduledAt: "2026-08-20T09:00:00Z", type: "Technical", format: "Remote" },
+      ]);
+      // The timeline carries chips on a different surface from the table's, and
+      // the composer is the only labelled field on the screen.
+      await seedActivity(email, DETAIL_ID, [
+        { kind: "Created", toStage: "Applied", occurredAt: "2026-08-01T09:00:00Z" },
+        {
+          kind: "StageChanged",
+          fromStage: "Applied",
+          toStage: "Offer",
+          transitionKind: "Advance",
+          occurredAt: "2026-08-03T09:00:00Z",
+        },
+        { kind: "Note", note: "Recruiter called.", occurredAt: "2026-08-05T09:00:00Z" },
+      ]);
+
+      await page.goto(`/applications/${DETAIL_ID}`);
+
+      // Open, because a closed menu sweeps nothing and a menu over a header is
+      // the most accessibility-sensitive thing on this screen.
+      await openTransitionMenu(page);
+
+      const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
+
+      expect(
+        violations.map((v) => `${v.id} (${v.nodes.length}): ${v.help}`),
+        "axe found violations on the application detail",
+      ).toEqual([]);
     });
   });
 }

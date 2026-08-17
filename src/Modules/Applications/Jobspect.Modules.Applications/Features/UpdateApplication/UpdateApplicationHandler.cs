@@ -79,7 +79,7 @@ internal sealed class UpdateApplicationHandler(
         var previousCampaignId = application.CampaignId;
 
         application.CampaignId = campaignId;
-        application.CompanyId = company.Value;
+        application.CompanyId = company.Value?.Id;
         application.Role = request.Role!.Trim();
         application.Compensation = ApplicationFieldMapping.ToMoney(request.Compensation);
         application.Location = ApplicationFieldMapping.Clean(request.Location);
@@ -99,7 +99,7 @@ internal sealed class UpdateApplicationHandler(
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return application.ToResponse();
+        return application.ToResponse(company.Value?.Name);
     }
 
     /// <summary>

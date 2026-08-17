@@ -151,13 +151,205 @@ export async function openPalette(page: Page): Promise<void> {
   await expect(page.getByPlaceholder("Go to a screen or switch campaign")).toBeVisible();
 }
 
-/** Seeds an account straight into the fake API, bypassing the register form. */
-export async function seedAccount(email: string): Promise<void> {
+/**
+ * Opens the transition menu on the application detail screen.
+ *
+ * Here rather than in one spec because two of them open it, and the reason it
+ * needs a helper at all is the reason `openPalette` does: the control only works
+ * once its component has hydrated, and a click landing before that is simply
+ * lost. A button has no bare href to fall back on the way a link does, so the
+ * gesture is retried rather than the assertion - which is what makes it
+ * independent of hydration order rather than lucky about it.
+ */
+export async function openTransitionMenu(page: Page) {
+  const trigger = page.getByRole("button", { name: "Move" });
+  const menu = page.getByRole("menu");
+
+  await expect(async () => {
+    await trigger.click();
+    await expect(menu).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+
+  return menu;
+}
+
+/**
+ * Seeds an account straight into the fake API, bypassing the register form.
+ *
+ * The zone is worth naming when a spec asserts how an instant reads: the form
+ * sends none and the API defaults it, so an account registered through the UI is
+ * always UTC and an assertion against it would pass however the instant was
+ * formatted.
+ */
+export async function seedAccount(email: string, timeZoneId?: string): Promise<void> {
   const response = await fetch(`${FAKE_API_ORIGIN}/__test/accounts`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password: PASSWORD }),
+    body: JSON.stringify({ email, password: PASSWORD, timeZoneId }),
   });
 
   expect(response.status, "the fake API seeded the account").toBe(201);
+}
+
+/**
+ * Seeds the account's field definitions.
+ *
+ * A spec states their ids so it can key answers to them in the application seed:
+ * the bag on an application is keyed by definition id, and a generated id could
+ * not be referred to from the same literal.
+ */
+export async function seedCustomFields(
+  email: string,
+  fields: Record<string, unknown>[],
+): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/custom-fields`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, fields }),
+  });
+
+  expect(response.status, "the fake API seeded the custom fields").toBe(201);
+}
+
+export async function seedContacts(
+  email: string,
+  applicationId: string,
+  contacts: Record<string, unknown>[],
+): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/contacts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, applicationId, contacts }),
+  });
+
+  expect(response.status, "the fake API seeded the contacts").toBe(201);
+}
+
+export async function seedInterviews(
+  email: string,
+  applicationId: string,
+  interviews: Record<string, unknown>[],
+): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/interviews`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, applicationId, interviews }),
+  });
+
+  expect(response.status, "the fake API seeded the interviews").toBe(201);
+}
+
+/**
+ * Makes one of the detail screen's calls fail for this account.
+ *
+ * Named, so a spec running beside this one cannot be the request that spends it -
+ * the same rule the stale-cursor arming follows. A read stays armed and the
+ * add-note write is spent on its first refusal; the fake says why.
+ */
+export async function failCalls(email: string, calls: string[]): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/fail-calls`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, calls }),
+  });
+
+  expect(response.status, "the fake API armed the failing call").toBe(204);
+}
+
+/**
+ * Seeds an application's timeline.
+ *
+ * The API writes a Created entry with every application and a StageChanged entry
+ * with every move, neither of which this client can cause yet - so a spec that
+ * wants history states it rather than driving it.
+ */
+export async function seedActivity(
+  email: string,
+  applicationId: string,
+  entries: Record<string, unknown>[],
+): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/activity`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, applicationId, entries }),
+  });
+
+  expect(response.status, "the fake API seeded the activity").toBe(201);
+}
+
+/** Every `Idempotency-Key` this account has sent, in order. */
+export async function idempotencyKeys(email: string): Promise<string[]> {
+  const response = await fetch(
+    `${FAKE_API_ORIGIN}/__test/idempotency-keys?email=${encodeURIComponent(email)}`,
+  );
+  const body = (await response.json()) as { keys: string[] };
+
+  return body.keys;
+}
+
+/**
+ * Sets the account's tier.
+ *
+ * Free unless a spec says otherwise, matching the fake's own default and the
+ * plan every account registers on.
+ */
+export async function seedPlan(email: string, tier: "Free" | "Pro"): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/plan`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, tier }),
+  });
+
+  expect(response.status, "the fake API seeded the plan").toBe(204);
+}
+
+/**
+ * The body the last full replace actually sent.
+ *
+ * The assertion this exists for is not what the screen shows afterwards - it is
+ * that every field the user never touched went back out carrying what it came in
+ * with. A `PUT` that replaces turns an omission into a deletion, and the screen
+ * would look right either way until the next read.
+ */
+export async function lastUpdateBody(email: string): Promise<Record<string, unknown> | null> {
+  const response = await fetch(
+    `${FAKE_API_ORIGIN}/__test/last-update?email=${encodeURIComponent(email)}`,
+  );
+  const body = (await response.json()) as { body: Record<string, unknown> | null };
+
+  return body.body;
+}
+
+/**
+ * The body the last contact write sent.
+ *
+ * The two links are why this matters here: a contact's application and company
+ * are carried by every replace and rendered by nothing, so dropping one changes
+ * the record and leaves the screen looking exactly as it did.
+ */
+export async function lastContactWriteBody(email: string): Promise<Record<string, unknown> | null> {
+  const response = await fetch(
+    `${FAKE_API_ORIGIN}/__test/last-contact-write?email=${encodeURIComponent(email)}`,
+  );
+  const body = (await response.json()) as { body: Record<string, unknown> | null };
+
+  return body.body;
+}
+
+/**
+ * The body the last interview write sent, for the same reason.
+ *
+ * A round's replace clears its notes as easily as an application's clears its
+ * fields, and here the trap is narrower: an edit that only records how a round
+ * went still has to send back the time, the kind and the format it came in with.
+ */
+export async function lastInterviewWriteBody(
+  email: string,
+): Promise<Record<string, unknown> | null> {
+  const response = await fetch(
+    `${FAKE_API_ORIGIN}/__test/last-interview-write?email=${encodeURIComponent(email)}`,
+  );
+  const body = (await response.json()) as { body: Record<string, unknown> | null };
+
+  return body.body;
 }

@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 
 import {
+  AddApplicationButton,
   applicationsSearchParams,
   ApplicationsBrowser,
   listFirstPage,
   readViewPreferences,
   ViewPreferencesForm,
 } from "@/features/applications";
-import { STAGES } from "@/server/api/enums";
+import { STAGES } from "@/lib/enums";
 
 export const metadata: Metadata = { title: "Applications — Jobspect" };
 
@@ -34,7 +35,20 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/app
           <p className="text-sm text-muted-foreground">Every application you have recorded.</p>
         </div>
 
-        {!empty && <ViewPreferencesForm preferences={preferences} />}
+        <div className="flex items-center gap-2">
+          {/* Both hidden on the same condition, and the second one matters for a
+              reason the first does not: the empty state below carries its own
+              call to action, and two links reading "Add application" on one
+              screen are heard twice by anybody navigating by link. A list
+              filtered down to nothing is not this case - it shows the table, and
+              keeps both controls. */}
+          {!empty && (
+            <>
+              <ViewPreferencesForm preferences={preferences} />
+              <AddApplicationButton campaignId={filters.campaignId} />
+            </>
+          )}
+        </div>
       </div>
 
       {empty ? (
@@ -43,6 +57,9 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/app
           <p className="mt-1 text-sm text-muted-foreground">
             The ones you record will appear here, with their stage, dates and source.
           </p>
+          <div className="mt-4 flex justify-center">
+            <AddApplicationButton campaignId={filters.campaignId} />
+          </div>
         </div>
       ) : (
         <ApplicationsBrowser

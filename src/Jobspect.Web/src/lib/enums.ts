@@ -1,9 +1,13 @@
-import "server-only";
-
 // The contract carries these as `enum:` arrays, but a generated union is only
 // as current as the last regeneration, and an older server can still send a
 // member this build has never heard of. These are the client's own copy, and
 // `enum-agreement.test.ts` asserts each one still equals the contract's.
+//
+// Here rather than beside the API client because both sides need them as
+// values: a select renders its options from one and a form schema narrows to
+// one, and a Client Component cannot reach anything marked server-only. Nothing
+// in this file holds a secret or a handle - it is hand-written contract
+// knowledge and pure functions over it.
 
 export const ACTIVE_STAGES = ["Applied", "Screening", "Interview", "Offer"] as const;
 
@@ -38,8 +42,8 @@ export const ACTIVITY_KINDS = ["Created", "StageChanged", "Note"] as const;
 export const INTERVIEW_TYPES = [
   "PhoneScreen",
   "Technical",
-  // British spelling, and it travels verbatim.
-  "Behavioural",
+  // Casing and all: the members travel verbatim, so this is not HRInterview.
+  "HrInterview",
   "Onsite",
   "Other",
 ] as const;

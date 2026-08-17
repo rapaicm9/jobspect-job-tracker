@@ -266,6 +266,7 @@ internal sealed record ApplicationView(
     Guid Id,
     Guid CampaignId,
     Guid? CompanyId,
+    string? CompanyName,
     string Stage,
     string Role,
     MoneyView? Compensation,

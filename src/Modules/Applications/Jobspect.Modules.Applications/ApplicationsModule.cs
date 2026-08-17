@@ -96,6 +96,7 @@ public static class ApplicationsModule
 
         builder.Services.AddScoped<SearchCompaniesHandler>();
         builder.Services.AddScoped<CompanyResolver>();
+        builder.Services.AddScoped<CompanyNameLookup>();
         builder.Services.AddScoped<CustomFieldValueResolver>();
         builder.Services.AddScoped<CustomFieldFilterResolver>();
         builder.Services.AddScoped<CustomFieldSortResolver>();

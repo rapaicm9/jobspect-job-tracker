@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { STAGES } from "@/server/api/enums";
+import { STAGES } from "@/lib/enums";
 
 import { SORT_DIRECTIONS, SORT_KEYS } from "../filters";
 import { listApplications, type ApplicationPage } from "../queries/list-applications";

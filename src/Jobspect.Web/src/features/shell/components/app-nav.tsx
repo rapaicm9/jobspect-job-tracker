@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { useScopedHref } from "@/features/campaigns";
 import { cn } from "@/lib/utils";
 
 import { NAV_ITEMS } from "../nav-items";
@@ -21,6 +22,7 @@ function isCurrent(pathname: string, href: string): boolean {
 
 export function AppNav() {
   const pathname = usePathname();
+  const scopedHref = useScopedHref();
 
   return (
     <nav aria-label="Primary">
@@ -34,7 +36,10 @@ export function AppNav() {
           return (
             <li key={href}>
               <Link
-                href={href}
+                // Scoped, while `current` above stays a question about the bare
+                // path: a campaign in that comparison would unmark every screen
+                // it applies to.
+                href={scopedHref(href)}
                 // The accessible statement of what the styling says. Without it
                 // the current item is a colour, which is not available to a
                 // screen reader and not reliable for anyone.

@@ -15,9 +15,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CredentialForm } from "@/features/auth/components/credential-form";
-import { FieldErrors } from "@/features/auth/components/field-errors";
 import { SessionEndedNotice } from "@/features/auth/components/session-ended-notice";
 import { EMPTY_FORM_STATE, type AuthFormState } from "@/features/auth/form-state";
+import { FieldError } from "@/ui/field";
 
 // Explicit because Testing Library only registers its own cleanup when Vitest
 // runs with globals, which this project does not. Without it each render stacks
@@ -33,7 +33,7 @@ const PASSWORD_RULES = [
 
 describe("a field the API refused several times over", () => {
   it("renders every message, not the first", () => {
-    render(<FieldErrors id="password-errors" messages={PASSWORD_RULES} />);
+    render(<FieldError id="password-errors" messages={PASSWORD_RULES} />);
 
     // The rule this component exists to hold. One sentence, or the first of
     // four, turns a single correction into four round trips.
@@ -41,7 +41,7 @@ describe("a field the API refused several times over", () => {
   });
 
   it("carries the id the input points at", () => {
-    render(<FieldErrors id="password-errors" messages={PASSWORD_RULES} />);
+    render(<FieldError id="password-errors" messages={PASSWORD_RULES} />);
 
     // Without this the messages are read as loose text near the field rather
     // than as part of it.
@@ -51,7 +51,7 @@ describe("a field the API refused several times over", () => {
 
 describe("a field with nothing wrong", () => {
   it.each([[undefined], [[]]])("renders nothing at all (%s)", (messages) => {
-    const { container } = render(<FieldErrors id="password-errors" messages={messages} />);
+    const { container } = render(<FieldError id="password-errors" messages={messages} />);
 
     // An empty list would still be an element for `aria-describedby` to point
     // at, and a screen reader would announce a list with no items.
@@ -147,8 +147,12 @@ describe("the credential form as first rendered", () => {
     renderRegister();
 
     const password = screen.getByLabelText("Password");
-    expect(describedBy(password)).toEqual(["password-hint"]);
-    expect(document.getElementById("password-hint")?.textContent).toBe(HINT);
+    const [hintId, ...rest] = describedBy(password);
+
+    // Asserted by what the id resolves to rather than by its name: the shared
+    // field wiring generates ids, so naming one would test React's counter.
+    expect(rest).toEqual([]);
+    expect(document.getElementById(hintId ?? "")?.textContent).toBe(HINT);
     expect(password.getAttribute("aria-invalid")).toBe("false");
   });
 
@@ -174,16 +178,19 @@ describe("a password the API refused", () => {
     const password = screen.getByLabelText("Password");
     const ids = describedBy(password);
 
-    // Both, in that order. Dropping the hint on the first refusal leaves the
-    // rules unreadable exactly when they are needed; dropping the errors makes
-    // the refusal silent to anyone not looking at the red text.
-    expect(ids).toEqual(["password-errors", "password-hint"]);
-
     // The assertion that matters. A describedby naming an element that is not
     // there is invisible to everyone except the person relying on it.
     for (const id of ids) {
       expect(document.getElementById(id), `#${id} is not in the document`).not.toBeNull();
     }
+
+    // Both, in that order - the complaint first and the standing rule after it.
+    // Dropping the hint on the first refusal leaves the rules unreadable exactly
+    // when they are needed; dropping the errors makes the refusal silent to
+    // anyone not looking at the red text.
+    expect(ids).toHaveLength(2);
+    expect(document.getElementById(ids[0] ?? "")?.tagName).toBe("UL");
+    expect(document.getElementById(ids[1] ?? "")?.textContent).toBe(HINT);
 
     expect(password.getAttribute("aria-invalid")).toBe("true");
     expect(screen.getAllByRole("listitem")).toHaveLength(PASSWORD_RULES.length);

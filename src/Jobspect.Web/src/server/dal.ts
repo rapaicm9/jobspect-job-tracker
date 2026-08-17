@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 import { cache, experimental_taintUniqueValue } from "react";
 
 import { api } from "@/server/api/client";
+import { toPlanTier, type Entitlement, type PlanTier } from "@/lib/enums";
 import type { ApiFailure } from "@/server/api/errors";
 import { callAuthenticated } from "@/server/session/call";
 import { readSessionCookie } from "@/server/session/cookie";
@@ -43,20 +44,34 @@ export interface Account {
   createdAt: Date;
 }
 
+export interface Plan {
+  /** `null` when the server named a tier this build has never heard of. */
+  tier: PlanTier | null;
+  /** When the tier last moved. Absent for an account still on its original plan. */
+  updatedAt: Date | null;
+}
+
 /**
  * Why there is no session, not just that there is none.
  *
- * The three absent states are told apart because the login page says something
+ * The absent states are told apart because the login page says something
  * different for each, and one of them is worth saying loudly: a revoked family
  * means a retired refresh token was replayed, and the account was signed out
  * everywhere on purpose. Reporting that as "your session expired" would hide the
  * one event a user would want to know about.
+ *
+ * `unavailable` is the odd one out and the reason this union has four absent
+ * members rather than three: it does not mean there is no session, it means the
+ * store could not be asked. Every caller that treated it as "anonymous" was
+ * acting on an answer nobody gave - see the token provider in
+ * `instrumentation.ts`, which used to make the call anyway with no credential.
  */
 export type SessionState =
   | { status: "active"; session: Session }
   | { status: "anonymous" }
   | { status: "expired" }
-  | { status: "revoked" };
+  | { status: "revoked" }
+  | { status: "unavailable" };
 
 /** The query the login page reads to explain itself. */
 export type SessionEndedReason = "expired" | "revoked";
@@ -101,10 +116,12 @@ export const verifySession = cache(async (): Promise<SessionState> => {
   try {
     outcome = await ensureFreshToken(sid);
   } catch {
-    // Redis is unreachable, so there is no way to tell whose request this is.
-    // Absent a session, the caller sends the user to log in - which is the right
-    // answer, because a process that cannot read Redis cannot serve them either.
-    return { status: "anonymous" };
+    // Redis is unreachable, so there is no way to tell whose request this is -
+    // which is a different thing from knowing nobody is signed in, and reporting
+    // it as the latter is what let a call go out with no credential at all.
+    // Callers decide: a render still sends the user to log in, because a process
+    // that cannot read Redis cannot serve them either.
+    return { status: "unavailable" };
   }
 
   switch (outcome.kind) {
@@ -138,13 +155,44 @@ export const verifySession = cache(async (): Promise<SessionState> => {
   }
 });
 
-/** The active session, or the login page with a reason it can explain. */
+/**
+ * The active session, or the login page with a reason it can explain.
+ *
+ * A store that could not be reached lands here as an ordinary sign-in, with no
+ * reason to give: the session may well still exist, and the honest thing to say
+ * is nothing rather than "expired". Signing in needs the same store, so the
+ * attempt fails loudly a moment later - which is the answer a process that
+ * cannot read Redis has to give either way.
+ */
 export async function requireSession(): Promise<Session> {
   const state = await verifySession();
   if (state.status === "active") return state.session;
 
-  // `redirect` throws, so nothing below runs for the other three.
-  redirect(state.status === "anonymous" ? "/login" : `/login?reason=${state.status}`);
+  const reason =
+    state.status === "expired" || state.status === "revoked" ? `?reason=${state.status}` : "";
+
+  // `redirect` throws, so nothing below runs for the other four.
+  redirect(`/login${reason}`);
+}
+
+/**
+ * The credential a call should carry, given what is known about the session.
+ *
+ * A pure function over the state rather than three lines inside the provider,
+ * because the rule it encodes is the one worth a test: `unavailable` must never
+ * become an unauthenticated call. Answering null there sends the request out
+ * with no credential, the API refuses it with a bodyless 401, and the client
+ * reports that as a stale token - three steps that each look like something
+ * else, which is how it went unnoticed.
+ *
+ * Genuinely absent sessions still answer null. A call made with no session is
+ * not an error; it is simply anonymous, and the API says what it thinks of that.
+ */
+export function accessTokenFor(state: SessionState): string | null {
+  if (state.status === "active") return state.session.accessToken;
+  if (state.status === "unavailable") throw new UpstreamError("refresh-unavailable");
+
+  return null;
 }
 
 export const getAccount = cache(async (): Promise<Account | null> => {
@@ -163,3 +211,71 @@ export const getAccount = cache(async (): Promise<Account | null> => {
     createdAt: new Date(result.data.createdAt),
   };
 });
+
+const reportedTiers = new Set<string>();
+
+/**
+ * The account's plan. Not cached in the session record by decision - a thirty-day
+ * cache of a purchasable tier leaves an account that has just paid looking
+ * unentitled - so the memo is what keeps four components from making four calls.
+ *
+ * An API failure throws rather than degrading to a tier. Callers need this to
+ * decide what a full-replace body should say about a gated field, and a guess in
+ * either direction is wrong: too generous costs a 403, too mean clears the
+ * account's answers.
+ */
+export const getPlan = cache(async (): Promise<Plan | null> => {
+  const state = await verifySession();
+  if (state.status !== "active") return null;
+
+  const result = await callAuthenticated(state.session.sid, (init) =>
+    api.GET("/api/v1/billing/plan", init),
+  );
+  if (!result.ok) throw new UpstreamError(result.failure.kind);
+
+  const tier = toPlanTier(result.data.tier);
+
+  // Reported once per distinct value, the way an unrecognised stage is: the
+  // conservative reading below is silent otherwise, and this is a tier nobody
+  // gets the benefit of until the union is updated.
+  if (tier === null && !reportedTiers.has(result.data.tier)) {
+    reportedTiers.add(result.data.tier);
+    console.warn(`Unrecognised plan tier from the API: ${result.data.tier}`);
+  }
+
+  return {
+    tier,
+    updatedAt: result.data.updatedAt === null ? null : new Date(result.data.updatedAt),
+  };
+});
+
+/**
+ * Whether a tier unlocks a capability. One purchase unlocks all of them in v1, so
+ * the tier is the whole answer and `entitlement` is the seam a per-feature rule
+ * would branch on later - the shape the server's own entitlement query has.
+ *
+ * An unrecognised tier is read as Free, matching the server's "no plan row means
+ * entitled to nothing". It is the conservative half of a UI convenience and the
+ * loud half of a write: a build that has not heard of the account's tier sends
+ * nothing for a gated field, which retains what is stored on every tier that
+ * refuses the write and replaces it on every tier that allows one.
+ */
+export function grants(tier: PlanTier | null, entitlement: Entitlement): boolean {
+  void entitlement;
+
+  return tier === "Pro";
+}
+
+/**
+ * A UI convenience, not a security control. The server re-checks inside the
+ * handler, so a check here that disagrees produces a 403 and nothing worse. Say
+ * so wherever it is called, or somebody will eventually treat it as the gate.
+ *
+ * Not separately memoised: `getPlan` holds the memo, so however many
+ * entitlements a render asks about, the API is called once.
+ */
+export async function hasEntitlement(entitlement: Entitlement): Promise<boolean> {
+  const plan = await getPlan();
+
+  return plan !== null && grants(plan.tier, entitlement);
+}

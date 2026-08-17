@@ -8,7 +8,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
-import { useCampaignScope, type Campaign } from "@/features/campaigns";
+import { useCampaignScope, useScopedHref, type Campaign } from "@/features/campaigns";
 import { cn } from "@/lib/utils";
 
 import { NAV_ITEMS } from "../nav-items";
@@ -22,6 +22,16 @@ import { NAV_ITEMS } from "../nav-items";
  */
 const CAMPAIGN_PREFIX = "Campaign: ";
 
+/**
+ * The one command that does something rather than going somewhere.
+ *
+ * It still resolves to a route, which is what keeps it a `router.push` like the
+ * destinations beside it: creating lives at its own URL precisely so that the
+ * palette can reach it from whichever screen the user happens to be on.
+ */
+const CREATE_LABEL = "Add application";
+const CREATE_HREF = "/applications/new";
+
 export interface CommandPaletteProps {
   campaigns: Campaign[];
 }
@@ -30,8 +40,10 @@ export function CommandPalette({ campaigns }: CommandPaletteProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [, setCampaignId] = useCampaignScope(campaigns);
+  const scopedHref = useScopedHref();
 
   const items = [
+    CREATE_LABEL,
     ...NAV_ITEMS.map((item) => item.label),
     // Only offered when there is a choice, for the same reason the switcher is
     // hidden then: a command that changes nothing is noise in a list meant to be
@@ -44,6 +56,11 @@ export function CommandPalette({ campaigns }: CommandPaletteProps) {
       if (label === null) return;
       setOpen(false);
 
+      if (label === CREATE_LABEL) {
+        router.push(scopedHref(CREATE_HREF));
+        return;
+      }
+
       if (label.startsWith(CAMPAIGN_PREFIX)) {
         const name = label.slice(CAMPAIGN_PREFIX.length);
         const campaign = campaigns.find((candidate) => candidate.name === name);
@@ -52,9 +69,9 @@ export function CommandPalette({ campaigns }: CommandPaletteProps) {
       }
 
       const destination = NAV_ITEMS.find((item) => item.label === label);
-      if (destination !== undefined) router.push(destination.href);
+      if (destination !== undefined) router.push(scopedHref(destination.href));
     },
-    [campaigns, router, setCampaignId],
+    [campaigns, router, scopedHref, setCampaignId],
   );
 
   useEffect(() => {
@@ -122,9 +139,7 @@ export function CommandPalette({ campaigns }: CommandPaletteProps) {
                     )}
                   >
                     <span>{label.replace(CAMPAIGN_PREFIX, "")}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {label.startsWith(CAMPAIGN_PREFIX) ? "Campaign" : "Go to"}
-                    </span>
+                    <span className="text-xs text-muted-foreground">{hintFor(label)}</span>
                   </Combobox.Item>
                 )}
               </Combobox.List>
@@ -134,6 +149,13 @@ export function CommandPalette({ campaigns }: CommandPaletteProps) {
       </Combobox.Root>
     </>
   );
+}
+
+/** What kind of thing this command is, in the trailing hint. */
+function hintFor(label: string): string {
+  if (label === CREATE_LABEL) return "Create";
+
+  return label.startsWith(CAMPAIGN_PREFIX) ? "Campaign" : "Go to";
 }
 
 /** The platform never changes under a session, so there is nothing to subscribe to. */

@@ -2425,6 +2425,7 @@ components:
         - id
         - campaignId
         - companyId
+        - companyName
         - stage
         - role
         - compensation
@@ -2453,6 +2454,10 @@ components:
             - 'null'
             - string
           format: uuid
+        companyName:
+          type:
+            - 'null'
+            - string
         stage:
           $ref: '#/components/schemas/Stage'
         role:
@@ -2500,6 +2505,7 @@ components:
             - string
         customFields:
           type: object
+          additionalProperties: { }
         createdAt:
           type: string
           format: date-time
@@ -2816,6 +2822,7 @@ components:
           type:
             - 'null'
             - object
+          additionalProperties: { }
     CreateCampaignRequest:
       required:
         - name
@@ -3069,7 +3076,7 @@ components:
       enum:
         - PhoneScreen
         - Technical
-        - Behavioural
+        - HrInterview
         - Onsite
         - Other
     LoginRequest:
@@ -3618,6 +3625,7 @@ components:
           type:
             - 'null'
             - object
+          additionalProperties: { }
     UpdateCampaignRequest:
       required:
         - name

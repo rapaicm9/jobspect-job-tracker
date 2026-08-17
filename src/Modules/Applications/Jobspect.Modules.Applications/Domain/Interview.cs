@@ -7,7 +7,7 @@ internal enum InterviewType
 {
     PhoneScreen,
     Technical,
-    Behavioural,
+    HrInterview,
     Onsite,
     Other,
 }

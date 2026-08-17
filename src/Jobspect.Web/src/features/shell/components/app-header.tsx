@@ -1,10 +1,9 @@
-import Link from "next/link";
-
 import { logout } from "@/features/auth";
 import { CampaignSwitcher, type Campaign } from "@/features/campaigns";
 import { Button } from "@/ui/button";
 
 import { AppNav } from "./app-nav";
+import { BrandLink } from "./brand-link";
 import { CommandPalette } from "./command-palette";
 
 export interface AppHeaderProps {
@@ -19,12 +18,7 @@ export function AppHeader({ email, campaigns }: AppHeaderProps) {
   return (
     <header className="border-b border-border bg-background">
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-6 py-3">
-        <Link
-          href="/applications"
-          className="text-base font-semibold tracking-tight text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          Jobspect
-        </Link>
+        <BrandLink />
 
         <AppNav />
 

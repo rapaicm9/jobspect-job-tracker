@@ -72,7 +72,7 @@ internal sealed class CreateApplicationHandler(
             Id = Guid.CreateVersion7(),
             OwnerId = ownerId,
             CampaignId = campaign.Value,
-            CompanyId = company.Value,
+            CompanyId = company.Value?.Id,
             Role = request.Role!.Trim(),
             Compensation = ApplicationFieldMapping.ToMoney(request.Compensation),
             Location = ApplicationFieldMapping.Clean(request.Location),
@@ -122,7 +122,7 @@ internal sealed class CreateApplicationHandler(
 
         // CreatedAt and Stage are database-generated; EF reads them back onto the
         // entity after the insert, so the response is complete without a re-read.
-        return application.ToResponse();
+        return application.ToResponse(company.Value?.Name);
     }
 
     /// <summary>

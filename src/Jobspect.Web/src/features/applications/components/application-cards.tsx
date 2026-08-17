@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import type { ApplicationRow } from "../to-application-row";
 import { isColumnVisible, type ViewPreferences } from "../view-preferences";
 
+import { ApplicationLink } from "./application-link";
 import { StageChip } from "./stage-chip";
 
 /**
@@ -63,7 +64,13 @@ export function ApplicationCards({ rows, preferences }: ApplicationCardsProps) {
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="font-medium text-foreground">{row.role}</p>
+              {/* The role rather than the whole card, matching the table: one
+                  link per row, and the link text names where it goes. */}
+              <p className="font-medium text-foreground">
+                <ApplicationLink id={row.id} className="underline-offset-4 hover:underline">
+                  {row.role}
+                </ApplicationLink>
+              </p>
               {row.companyName !== null && (
                 <p className="text-sm text-muted-foreground">{row.companyName}</p>
               )}

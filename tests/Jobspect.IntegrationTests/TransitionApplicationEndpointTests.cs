@@ -36,6 +36,23 @@ public sealed class TransitionApplicationEndpointTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task Keeps_the_company_name_on_the_moved_application()
+    {
+        var tokens = await fixture.RegisterWithDefaultCampaignAsync(_client, Ct);
+        var application = await (await _client.CreateApplicationAsync(
+            tokens.AccessToken, new { role = "Backend Engineer", companyName = "Acme Corp" }))
+            .ReadApplicationAsync();
+
+        var moved = await (await _client.TransitionApplicationAsync(
+            tokens.AccessToken, application.Id, "Screening")).ReadApplicationAsync();
+
+        // A move says nothing about the company, and this response is the whole
+        // application - a client replaces what it holds with it, so a name left
+        // out here would vanish from the screen on every transition.
+        moved.CompanyName.ShouldBe("Acme Corp");
+    }
+
+    [Fact]
     public async Task Jumps_straight_from_Applied_to_a_terminal()
     {
         var tokens = await fixture.RegisterWithDefaultCampaignAsync(_client, Ct);

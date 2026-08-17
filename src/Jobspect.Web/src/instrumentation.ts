@@ -14,8 +14,10 @@ export async function register() {
   // them out of a bundle that could not load them.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const [{ setAccessTokenProvider, requireBaseUrl }, { verifySession, UpstreamError }] =
-    await Promise.all([import("@/server/api/client"), import("@/server/dal")]);
+  const [
+    { setAccessTokenProvider, requireBaseUrl },
+    { accessTokenFor, verifySession, UpstreamError },
+  ] = await Promise.all([import("@/server/api/client"), import("@/server/dal")]);
 
   // Fail the boot rather than the first request. The API client itself builds
   // lazily so the application can be compiled without deployment configuration,
@@ -23,9 +25,9 @@ export async function register() {
   requireBaseUrl();
 
   setAccessTokenProvider(async () => {
+    let state;
     try {
-      const state = await verifySession();
-      return state.status === "active" ? state.session.accessToken : null;
+      state = await verifySession();
     } catch (cause) {
       // A failed refresh is worth surfacing: the caller gets an error boundary
       // rather than a request that goes out unauthenticated and fails anyway.
@@ -35,5 +37,10 @@ export async function register() {
       // made from startup code, or from a script. Unauthenticated is correct.
       return null;
     }
+
+    // A store that could not be read is not nobody being signed in, and this is
+    // where the difference matters most. The rule lives beside the state it reads
+    // rather than here, so it can be tested without a request scope.
+    return accessTokenFor(state);
   });
 }

@@ -138,6 +138,130 @@ public sealed class OpenApiContractTests(ApiFixture fixture)
     }
 
     /// <summary>
+    /// Every object says what it may hold, so a generator can express it as a
+    /// type something can be assigned to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An object declaring neither <c>properties</c> nor <c>additionalProperties</c>
+    /// is permissive as JSON Schema - the omission means "anything" - and
+    /// uninhabitable as a generated type: <c>openapi-typescript</c> renders it
+    /// <c>Record&lt;string, never&gt;</c>, a map admitting no keys, which every
+    /// read and write of it then has to cast around.
+    /// </para>
+    /// <para>
+    /// The way to arrive here is a dictionary keyed by anything but a string,
+    /// which the schema mapper describes without saying what its values are. That
+    /// is a fact about the mapper rather than about any one payload, so this is a
+    /// rule over the whole document rather than an assertion about the properties
+    /// that carry one today.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task No_object_schema_admits_no_properties_at_all()
+    {
+        using var document = JsonDocument.Parse(await ServedDocumentAsync("json"));
+
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var offenders = new SortedSet<string>(StringComparer.Ordinal);
+
+        foreach (var component in schemas.EnumerateObject())
+        {
+            CollectClosedObjects(schemas, component.Value, component.Name, offenders, []);
+        }
+
+        offenders.ShouldBeEmpty(
+            "an object schema declares neither properties nor additionalProperties, so a generated "
+            + "client types it as a map that admits no keys. Describe what it may hold - a dictionary "
+            + "keyed by anything but a string arrives this way.");
+    }
+
+    /// <summary>
+    /// Walks one schema and everything inside it, reporting each object that says
+    /// nothing about its contents. Following the references as well as the inline
+    /// shapes is what makes this a rule about the document rather than about its
+    /// component list: the bag that prompted it is a property of a component, not
+    /// a component of its own.
+    /// </summary>
+    private static void CollectClosedObjects(
+        JsonElement schemas, JsonElement schema, string path, SortedSet<string> offenders, HashSet<string> seen)
+    {
+        // A boolean is a legal schema and states its answer outright, so there is
+        // nothing here to walk or to complain about.
+        if (schema.ValueKind is not JsonValueKind.Object)
+        {
+            return;
+        }
+
+        if (ReferenceName(schema) is { } referenced)
+        {
+            if (seen.Add(referenced) && schemas.TryGetProperty(referenced, out var target))
+            {
+                CollectClosedObjects(schemas, target, path, offenders, seen);
+            }
+
+            return;
+        }
+
+        var described = schema.TryGetProperty("properties", out var properties);
+
+        if (DeclaresObject(schema) && !described && !schema.TryGetProperty("additionalProperties", out _))
+        {
+            offenders.Add(path);
+        }
+
+        if (described)
+        {
+            foreach (var property in properties.EnumerateObject())
+            {
+                CollectClosedObjects(schemas, property.Value, $"{path}.{property.Name}", offenders, seen);
+            }
+        }
+
+        if (schema.TryGetProperty("items", out var items))
+        {
+            CollectClosedObjects(schemas, items, $"{path}[]", offenders, seen);
+        }
+
+        if (schema.TryGetProperty("additionalProperties", out var values))
+        {
+            CollectClosedObjects(schemas, values, $"{path}[*]", offenders, seen);
+        }
+
+        foreach (var keyword in Compositions)
+        {
+            if (!schema.TryGetProperty(keyword, out var branches))
+            {
+                continue;
+            }
+
+            foreach (var branch in branches.EnumerateArray())
+            {
+                CollectClosedObjects(schemas, branch, path, offenders, seen);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether a schema claims to be an object. A nullable one carries a list of
+    /// types rather than a single one, and is an object all the same.
+    /// </summary>
+    private static bool DeclaresObject(JsonElement schema)
+    {
+        if (!schema.TryGetProperty("type", out var type))
+        {
+            return false;
+        }
+
+        return type.ValueKind switch
+        {
+            JsonValueKind.String => type.ValueEquals("object"),
+            JsonValueKind.Array => type.EnumerateArray().Any(member => member.ValueEquals("object")),
+            _ => false,
+        };
+    }
+
+    /// <summary>
     /// One parameter, and whatever its schema reaches - an enum arrives either
     /// inline or as a reference to a named one, and both bind the same way.
     /// </summary>
