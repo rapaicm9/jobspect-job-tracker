@@ -3,15 +3,18 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   anEmail,
   applicationRequestCount,
+  failCalls,
   failStageReads,
+  idempotencyKeys,
+  openTransitionMenu,
   registerThroughTheForm,
   seedApplications,
 } from "./support";
 
-// The read, and nothing that moves. Everything the drag is layered on: four
-// columns from four filtered reads, and honest answers at the three edges a
+// Four columns from four filtered reads, honest answers at the three edges a
 // board has - a stage with nothing in it, a stage holding more than one page,
-// and a stage whose read went down.
+// and a stage whose read went down - and the drag that moves a card between
+// them.
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -28,6 +31,17 @@ function inDays(days: number): string {
 
 function column(page: Page, stage: string) {
   return page.getByRole("region", { name: stage });
+}
+
+/**
+ * The board's own alert.
+ *
+ * Scoped to `main` because Next appends a route announcer to the body with
+ * `role="alert"` on it. That one is empty and always present, so an unscoped
+ * query matches two things and resolves to the wrong one.
+ */
+function refusal(page: Page) {
+  return page.getByRole("main").getByRole("alert");
 }
 
 /**
@@ -49,6 +63,38 @@ async function signInWith(page: Page, applications: Record<string, unknown>[]): 
   await page.goto("/board");
 
   return email;
+}
+
+/**
+ * Drags a card by its grip and drops it on a column.
+ *
+ * Real pointer events rather than Playwright's `dragTo`, which dispatches the
+ * HTML5 drag-and-drop events that dnd-kit's PointerSensor does not listen for -
+ * that call succeeds and moves nothing, which is the worst shape a test failure
+ * can take.
+ *
+ * No pause after the press: the sensor's default constraints return none at all
+ * for a mouse whose press landed on the drag handle, so the drag is live from the
+ * first move. The intermediate steps are what give collision detection something
+ * to run against; a single jump can land the pointer on the target without ever
+ * having been detected over it.
+ */
+async function dragCardTo(page: Page, role: string, stage: string): Promise<void> {
+  const handle = page.getByRole("button", { name: `Move ${role}` });
+  await handle.scrollIntoViewIfNeeded();
+
+  const from = await handle.boundingBox();
+  const to = await column(page, stage).boundingBox();
+  expect(from, "the card's drag handle is on screen").not.toBeNull();
+  expect(to, `the ${stage} column is on screen`).not.toBeNull();
+
+  await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height / 2, { steps: 16 });
+  // A second move over the target, so the drop happens on a pointer position the
+  // collision pass has already seen rather than on the one that arrived with it.
+  await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height / 2 + 8, { steps: 4 });
+  await page.mouse.up();
 }
 
 function manyIn(stage: string, count: number) {
@@ -307,5 +353,228 @@ test.describe("a read that failed", () => {
     // No number, because there isn't one - but the link stays, since it is the
     // only route to the closed applications.
     await expect(page.getByRole("link", { name: "Closed applications" })).toBeVisible();
+  });
+});
+
+test.describe("dragging a card", () => {
+  test("moves it to the column it was dropped on", async ({ page }) => {
+    await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    await dragCardTo(page, "Frontend Engineer", "Screening");
+
+    // Both columns, because a move that only adds is a move that duplicated.
+    await expect(column(page, "Screening")).toContainText("Frontend Engineer");
+    await expect(column(page, "Applied")).not.toContainText("Frontend Engineer");
+    await expect(column(page, "Applied")).toContainText("Nothing in this stage.");
+  });
+
+  test("lets a card skip a stage", async ({ page }) => {
+    // The API permits a jump forward, so a drop is not restricted to the
+    // adjacent column.
+    await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    await dragCardTo(page, "Frontend Engineer", "Offer");
+
+    await expect(column(page, "Offer")).toContainText("Frontend Engineer");
+  });
+
+  test("survives the answer rather than snapping back on success", async ({ page }) => {
+    // The assertion that makes the whole design load-bearing. React drops an
+    // optimistic value the moment the action settles, so the card stays put only
+    // because the action revalidated this route and the columns it re-rendered
+    // are the new truth. Remove that revalidation and this goes red while the
+    // move still lands - a success that looks exactly like a refusal.
+    const email = await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    await dragCardTo(page, "Frontend Engineer", "Interview");
+    await expect(column(page, "Interview")).toContainText("Frontend Engineer");
+
+    // Still there a beat later, rather than caught mid-transition. A poll that a
+    // race can win is not an assertion.
+    await expect(async () => {
+      expect(await applicationRequestCount(email)).toBeGreaterThan(1);
+      await expect(column(page, "Interview")).toContainText("Frontend Engineer");
+    }).toPass();
+
+    await page.reload();
+    await expect(column(page, "Interview")).toContainText("Frontend Engineer");
+  });
+
+  test("does not accept a drop on an earlier column", async ({ page }) => {
+    // The pipeline has no backward move for a live application, so the board
+    // does not offer one. Nothing is sent and nothing is refused.
+    const email = await signInWith(page, [{ stage: "Interview", role: "Frontend Engineer" }]);
+
+    await dragCardTo(page, "Frontend Engineer", "Applied");
+
+    await expect(column(page, "Interview")).toContainText("Frontend Engineer");
+    await expect(column(page, "Applied")).toContainText("Nothing in this stage.");
+    expect(await idempotencyKeys(email), "no write was attempted").toEqual([]);
+  });
+
+  test("returns the card and says why when the pipeline refuses", async ({ page }) => {
+    // The real route to this is a second tab: nothing invalidates another tab's
+    // Router Cache, so its board can offer a move the server has already made
+    // impossible. Armed here because one browser cannot be made to do it on
+    // demand.
+    const email = await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+    await failCalls(email, ["transition-illegal"]);
+
+    await dragCardTo(page, "Frontend Engineer", "Screening");
+
+    // The server's own sentence, which names both stages.
+    await expect(refusal(page)).toContainText("cannot move from");
+    // And the card is back, with no rollback code behind it: nothing ever really
+    // moved, so the optimistic value simply stopped rendering.
+    await expect(column(page, "Applied")).toContainText("Frontend Engineer");
+    await expect(column(page, "Screening")).toContainText("Nothing in this stage.");
+  });
+
+  test("reuses one key when the first attempt is still in flight", async ({ page }) => {
+    const email = await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+    await failCalls(email, ["transition-in-flight"]);
+
+    await dragCardTo(page, "Frontend Engineer", "Screening");
+
+    await expect(column(page, "Screening")).toContainText("Frontend Engineer");
+
+    // Polled rather than read once. The optimistic card renders before the
+    // request is even sent, so the screen showing the move says nothing yet about
+    // what went out - and the retry waits out a Retry-After on top of that.
+    await expect.poll(() => idempotencyKeys(email)).toHaveLength(2);
+
+    // Two requests, one key. A fresh key on the retry is how one drag becomes two
+    // moves, which is the guarantee ADR 0011 exists for.
+    expect(new Set(await idempotencyKeys(email)).size).toBe(1);
+  });
+
+  test("costs one write and one repaint", async ({ page }) => {
+    // Five reads for the board plus the move itself. The per-IP limiter is shared
+    // by every user of a deployment, and a drag per card multiplies whatever this
+    // number is, so it is asserted rather than assumed.
+    const email = await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    const before = await applicationRequestCount(email);
+    await dragCardTo(page, "Frontend Engineer", "Screening");
+    await expect(column(page, "Screening")).toContainText("Frontend Engineer");
+
+    // The repaint the action revalidates into, waited for rather than caught: the
+    // optimistic card is on screen before a single request has gone out.
+    await expect.poll(() => applicationRequestCount(email)).toBe(before + 5);
+
+    // And it rests there. A sixth read arriving a moment later is exactly the
+    // regression this exists to catch, and an assertion that stopped at the fifth
+    // would never see it.
+    await page.waitForTimeout(1_000);
+    expect((await applicationRequestCount(email)) - before).toBe(5);
+    expect(await idempotencyKeys(email)).toHaveLength(1);
+  });
+
+  test("shows the move without a second round trip to see it", async ({ page }) => {
+    await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    // Everything after the move's own request is refused. Nothing legitimate is
+    // lost by that - the action re-renders this route inside its own response -
+    // so this stays green until somebody reintroduces a follow-up request, and
+    // the day that happens it goes red for the right reason.
+    let writes = 0;
+    await page.route("**/board**", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+
+      writes += 1;
+      await (writes > 1 ? route.abort("failed") : route.continue());
+    });
+
+    await dragCardTo(page, "Frontend Engineer", "Screening");
+
+    await expect(column(page, "Screening")).toContainText("Frontend Engineer");
+    await expect(column(page, "Applied")).toContainText("Nothing in this stage.");
+  });
+});
+
+test.describe("the drag against the policy", () => {
+  test("lifts a card without violating the content security policy", async ({ page }) => {
+    // The assertion that earns its place, because every other drag test passed
+    // while this was broken. dnd-kit injects the stylesheet that positions the
+    // lifted card, and `style-src` here is nonce-based - so an untagged one is
+    // refused, the card lifts to the top-left corner of the page and stays
+    // there, and nothing in the DOM says anything is wrong. Every drag test
+    // still passed. The browser's own complaint is the only thing that notices.
+    //
+    // Discriminated by directive rather than by the blocked content, and that is
+    // forced rather than chosen: `sample` is only populated when the policy names
+    // `'report-sample'`, so it is the empty string for every violation here and
+    // filtering on it asserts nothing at all. Checked by mutation - a version of
+    // this test that read `sample` stayed green with the nonce removed entirely.
+    //
+    // `style-src-elem` is the stylesheet, which is the one that matters. One
+    // `style-src-attr` violation survives on purpose: dnd-kit clears an element's
+    // styles by writing an empty `style` attribute, and a nonce cannot cover a
+    // style attribute at all. Blocking an empty attribute removes nothing, and
+    // relaxing the policy to permit every inline style in the application would
+    // be a poor trade for a silent log line.
+    const blocked: string[] = [];
+    await page.addInitScript(() => {
+      document.addEventListener("securitypolicyviolation", (event) => {
+        const violation = event as SecurityPolicyViolationEvent;
+        console.log(`BLOCKED ${violation.effectiveDirective}`);
+      });
+    });
+    page.on("console", (message) => {
+      if (message.text() === "BLOCKED style-src-elem") blocked.push(message.text());
+    });
+
+    await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+    await dragCardTo(page, "Frontend Engineer", "Screening");
+    await expect(column(page, "Screening")).toContainText("Frontend Engineer");
+
+    expect(blocked).toEqual([]);
+  });
+});
+
+test.describe("a move made somewhere else", () => {
+  test("reaches the board when it is next opened", async ({ page }) => {
+    // A behaviour worth holding whatever makes it true, rather than a test for
+    // one line: removing `revalidatePath('/board')` does not turn this red,
+    // because any revalidation in an action already drops the client Router
+    // Cache. What must not regress is the user-visible fact - a move made on the
+    // detail screen is on the board the next time it is opened, without a reload.
+    const id = "88888888-8888-4888-8888-888888888888";
+    const email = anEmail();
+    await registerThroughTheForm(page, email);
+    await seedApplications(email, [{ id, stage: "Applied", role: "Frontend Engineer" }]);
+
+    // Visited first, so the board is in the Router Cache to go stale.
+    await page.goto("/board");
+    await expect(column(page, "Applied")).toContainText("Frontend Engineer");
+
+    await page.goto(`/applications/${id}`);
+    const menu = await openTransitionMenu(page);
+    await menu.getByRole("menuitem", { name: "Interview" }).click();
+
+    // Waited out before navigating, which is both what a user does and what
+    // keeps this deterministic: a click dispatched while the move's transition is
+    // still running is swallowed, and the symptom is a navigation that simply
+    // never happens.
+    await expect(page.getByRole("banner")).toBeVisible();
+    await expect(page.getByText("Interview").first()).toBeVisible();
+
+    // Navigated rather than reloaded: a reload would bypass the Router Cache and
+    // pass however stale the cache is.
+    await page.getByRole("banner").getByRole("link", { name: "Board" }).click();
+    await expect(page).toHaveURL(/\/board$/, { timeout: 15_000 });
+
+    // Longer than the default five seconds, and the reason is the same one the
+    // registration helper gives: this single assertion waits on a client-side
+    // navigation and then on the board's five parallel reads. At six workers the
+    // default budget runs out here first, which showed up as the columns not
+    // existing yet rather than as the card being in the wrong one.
+    await expect(column(page, "Interview")).toContainText("Frontend Engineer", {
+      timeout: 15_000,
+    });
+    await expect(column(page, "Applied")).toContainText("Nothing in this stage.");
   });
 });

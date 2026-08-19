@@ -1,41 +1,56 @@
+"use client";
+
+// Client-owned because the card is the draggable. Still rendered on the server
+// for the first paint - the data comes from the board's own read either way.
+
+import { useDraggable } from "@dnd-kit/react";
+import { GripVertical } from "lucide-react";
 import Link from "next/link";
 
 import { formatDate } from "@/lib/dates";
+import type { ActiveStage } from "@/lib/enums";
 import { cn } from "@/lib/utils";
 
 import type { BoardCard as Card } from "../board";
 
-export interface BoardCardProps {
+export interface BoardCardBodyProps {
   card: Card;
-  /** The campaign the board is being read through, stamped onto the link. */
   href: string;
+  /** The grip, when there is a live drag behind it. The overlay passes none. */
+  handle?: React.ReactNode;
 }
 
 /**
- * What you scan a board for: who, where, when it went out, and whether anything
- * is about to run out.
+ * The card's contents, with no drag in them.
  *
- * A plain `<Link>` rather than the list's `ApplicationLink`. That one reads the
- * scope through a hook because a table row has nowhere else to get it; here the
- * page already knows it and hands the finished href down, which keeps this a
- * Server Component.
+ * Split out so the overlay can render the same card while it travels: the
+ * overlay is outside the list and must not call the draggable hook, which has no
+ * effect there anyway.
  */
-export function BoardCard({ card, href }: BoardCardProps) {
+export function BoardCardBody({ card, href, handle }: BoardCardBodyProps) {
   const applied = formatDate(card.appliedDate);
 
   return (
-    <li className="rounded-lg border border-border bg-card p-3">
-      {/* The role rather than the whole card, matching every other list in the
-          product: one link per item, and the link text names where it goes. */}
-      <p className="font-medium text-foreground">
-        <Link href={href} className="underline-offset-4 hover:underline">
-          {card.role}
-        </Link>
-      </p>
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {/* The role rather than the whole card, matching every other list in
+              the product: one link per item, and the link text names where it
+              goes. The grip beside it is what drags, so the two gestures never
+              compete for the same press. */}
+          <p className="font-medium text-foreground">
+            <Link href={href} className="underline-offset-4 hover:underline">
+              {card.role}
+            </Link>
+          </p>
 
-      {card.companyName !== null && (
-        <p className="mt-0.5 text-sm text-muted-foreground">{card.companyName}</p>
-      )}
+          {card.companyName !== null && (
+            <p className="mt-0.5 text-sm text-muted-foreground">{card.companyName}</p>
+          )}
+        </div>
+
+        {handle}
+      </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {applied !== null && (
@@ -46,9 +61,7 @@ export function BoardCard({ card, href }: BoardCardProps) {
 
         {card.deadline !== null && (
           // The words carry it and the colour carries nothing: near and overdue
-          // are told apart by what the chip says, not by what shade it is. The
-          // design consolidation session that follows this sprint is where
-          // emphasis gets chosen against real data and measured.
+          // are told apart by what the chip says, not by what shade it is.
           <span
             className={cn(
               "inline-flex h-5 items-center rounded-4xl bg-muted px-2 font-medium whitespace-nowrap",
@@ -59,6 +72,44 @@ export function BoardCard({ card, href }: BoardCardProps) {
           </span>
         )}
       </div>
+    </>
+  );
+}
+
+export interface BoardCardProps {
+  card: Card;
+  href: string;
+  /** The column this card is in, which is what a target checks against. */
+  stage: ActiveStage;
+}
+
+export function BoardCard({ card, href, stage }: BoardCardProps) {
+  // `type` is the whole of the client's move rule: a column accepts a set of
+  // types, so a backward drop is never a drop rather than a refusal to explain.
+  const { ref, handleRef } = useDraggable({ id: card.id, type: stage });
+
+  return (
+    // Nothing here changes while the card is being dragged, and that is not an
+    // omission. dnd-kit lifts this element itself and moves it under the pointer,
+    // so a `isDragging` treatment applies to the card in hand rather than to
+    // anything left behind - dimming it fades the thing the user is holding.
+    <li ref={ref} className="rounded-lg border border-border bg-card p-3">
+      <BoardCardBody
+        card={card}
+        href={href}
+        handle={
+          <button
+            ref={handleRef}
+            type="button"
+            // The accessible name says which card, because a column of identical
+            // "Move" buttons is not what a screen reader should hear.
+            aria-label={`Move ${card.role}`}
+            className="-mr-1 -mt-1 inline-flex size-(--control-height-sm) min-h-(--target-min) min-w-(--target-min) shrink-0 cursor-grab items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            <GripVertical aria-hidden="true" className="size-4" />
+          </button>
+        }
+      />
     </li>
   );
 }

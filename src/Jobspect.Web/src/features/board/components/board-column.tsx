@@ -1,8 +1,15 @@
+"use client";
+
+// Client-owned because the column is the drop target.
+
+import { useDroppable } from "@dnd-kit/react";
 import Link from "next/link";
 
 import { withCampaignScope } from "@/features/campaigns";
+import { cn } from "@/lib/utils";
 
 import type { BoardColumn as Column } from "../board";
+import { stagesAcceptedBy } from "../drag";
 import { stageListHref } from "../links";
 
 import { BoardCard } from "./board-card";
@@ -24,10 +31,24 @@ export interface BoardColumnProps {
 export function BoardColumn({ column, campaignId }: BoardColumnProps) {
   const headingId = `board-column-${column.stage.toLowerCase()}`;
 
+  const { ref, isDropTarget } = useDroppable({
+    id: column.stage,
+    accept: stagesAcceptedBy(column.stage),
+    // A column whose read failed could not show the result of a move into it, so
+    // it does not offer to receive one.
+    disabled: column.kind === "failed",
+  });
+
   return (
     <section
+      ref={ref}
       aria-labelledby={headingId}
-      className="flex w-72 shrink-0 flex-col gap-3 lg:w-auto lg:shrink"
+      className={cn(
+        "flex w-72 shrink-0 flex-col gap-3 rounded-lg border border-transparent p-1 lg:w-auto lg:shrink",
+        // Shown on the columns that can take the card in hand, so which drops are
+        // available is legible before the drop rather than after it.
+        isDropTarget && "border-dashed border-border-strong bg-accent/40",
+      )}
     >
       <div className="flex items-baseline justify-between gap-2 border-b border-border pb-2">
         <h2 id={headingId} className="text-sm font-semibold tracking-tight text-foreground">
@@ -64,6 +85,7 @@ export function BoardColumn({ column, campaignId }: BoardColumnProps) {
               <BoardCard
                 key={card.id}
                 card={card}
+                stage={column.stage}
                 href={withCampaignScope(`/applications/${card.id}`, campaignId)}
               />
             ))}
@@ -72,7 +94,7 @@ export function BoardColumn({ column, campaignId }: BoardColumnProps) {
           {column.truncated && (
             // Silent truncation is the one failure on a board that nobody can
             // detect by looking. The list is where the rest of them are: it walks
-            // a set this size, and it sorts and filters one, which is the whole
+            // a set that size, and it sorts and filters one, which is the whole
             // reason the board hands off rather than growing a walk of its own.
             <p className="text-xs text-muted-foreground">
               Showing the first {column.cards.length}. More are not loaded —{" "}

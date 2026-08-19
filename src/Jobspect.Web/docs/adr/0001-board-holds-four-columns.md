@@ -2,8 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-08
-- **Amended:** 2026-08-19 — the closed chip counts approximately, and the unrecognised-stage column
-  turned out to be unreachable. See _Revision history_.
+- **Amended:** 2026-08-19 — the closed chip counts approximately, a step back is not a drop target,
+  and the unrecognised-stage column turned out to be unreachable. See _Revision history_.
 
 ## Context
 
@@ -28,8 +28,11 @@ The board shows **four columns: Applied, Screening, Interview, Offer.**
   forward-only keyset with no count), so the chip is the length of one read bounded at the
   endpoint's ceiling — "87 closed" when the read ends inside it, "100+ closed" when the response
   still carries a cursor. A number the client cannot know is never asserted as one.
-- **Skips are legal.** The API permits a jump forward, so a drop must not be restricted to the
-  adjacent column.
+- **Skips are legal; steps back are not offered.** The API permits a jump forward, so a drop must
+  not be restricted to the adjacent column. It does not permit an active application to move
+  backwards — the aggregate requires a strictly later stage — so an earlier column is **not a drop
+  target**, in the same way the transition menu lists only the moves the pipeline allows. The client
+  gates the gesture; the server still judges the move, and a `422` is still handled.
 - **The board reads one request per column**, each narrowed to a single stage, rather than walking
   a combined list. A combined walk fills unevenly — a page can come back almost entirely Applied,
   leaving Offer showing an empty state that is not true until the walk ends.
@@ -103,6 +106,12 @@ Three arguments fix this, in order of weight:
   honest chip is one bounded read reporting "100+" above its ceiling. The analytics overview does
   return an exact figure and was rejected for being on a different clock; that is recorded under
   _Alternatives considered_ because it is the first thing a reader of the chip alone would propose.
+- **2026-08-19 — a step back is not a drop target.** The original said only that skips are legal,
+  which is half the rule and the half that guards against over-restricting. Building the drag made
+  the other half concrete: the pipeline has no backward move for a live application, so offering the
+  gesture would mean deliberately inviting a refusal the transition menu pointedly does not offer.
+  Recorded here because the two are one decision about where the client's model of the state machine
+  is allowed to act.
 - **2026-08-19 — the unrecognised-stage column is struck.** It cannot be reached. The board reads
   one request per column, each naming a single stage, and the endpoint narrows to the stages it was
   given — so no read can answer with a row in a stage that was not asked for. The instruction

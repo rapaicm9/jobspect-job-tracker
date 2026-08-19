@@ -79,8 +79,23 @@ export async function requestTransition(
     // response leaves nothing for a second request to race. The list is named as
     // well as the detail screen because it renders the stage column, and a
     // refresh of the detail route never invalidated it.
+    //
+    // The board is named for completeness rather than for a failure anyone can
+    // reproduce, and that is worth stating plainly rather than dressing up.
+    // Removing this line changes nothing observable: the drag reconciles, the
+    // repaint still costs five reads, and a move made from the detail menu still
+    // shows on the board when it is next opened. Two things already cover it -
+    // an action re-renders the route it was called from without being asked, and
+    // any `revalidatePath` at all appears to drop the client Router Cache
+    // wholesale rather than one path of it.
+    //
+    // It stays because the second of those is a framework side effect this code
+    // would rather not depend on, and because naming every route a stage change
+    // invalidates is the thing that keeps being true as revalidation gets more
+    // path-scoped. Nothing here should be read as evidence it is load-bearing.
     revalidatePath(`/applications/${applicationId}`);
     revalidatePath("/applications");
+    revalidatePath("/board");
 
     const activity = await listActivity(applicationId);
 

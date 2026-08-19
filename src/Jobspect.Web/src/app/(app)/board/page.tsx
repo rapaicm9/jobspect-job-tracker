@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 
 import { AddApplicationButton } from "@/features/applications";
-import { BoardColumns, ClosedChip, isBoardEmpty, readBoard } from "@/features/board";
+import { BoardDrag, ClosedChip, isBoardEmpty, readBoard } from "@/features/board";
 import { todayInZone } from "@/lib/instants";
 import { getAccount, requireSession } from "@/server/dal";
 
@@ -25,6 +26,11 @@ export default async function BoardPage({ searchParams }: PageProps<"/board">) {
     campaignId: scope,
     today: todayInZone(account?.timeZoneId ?? null),
   });
+
+  // The proxy stamps this on the request and Next reads it off the incoming CSP
+  // header for its own scripts. The drag needs it too, for the stylesheet it
+  // injects when a card is lifted.
+  const nonce = (await headers()).get("x-nonce") ?? "";
 
   const empty = isBoardEmpty(board);
 
@@ -60,7 +66,7 @@ export default async function BoardPage({ searchParams }: PageProps<"/board">) {
           </div>
         </div>
       ) : (
-        <BoardColumns board={board} campaignId={scope} />
+        <BoardDrag board={board} campaignId={scope} nonce={nonce} />
       )}
     </div>
   );
