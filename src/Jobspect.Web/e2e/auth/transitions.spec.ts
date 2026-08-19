@@ -110,13 +110,63 @@ test.describe("moving an application", () => {
     // The header is server-rendered and the timeline is a client cache; a move
     // has to move both or the screen contradicts itself.
     //
-    // Longer than the default five seconds, because this waits on a Server
-    // Action, a call to the API, a server re-render of the whole page and a
-    // refetch of the history. Under load this is where the budget runs out
-    // first, and a genuine break still fails - only later.
-    await expect(header(page).getByText("Interview")).toBeVisible({ timeout: 15_000 });
-    await expect(feed(page)).toContainText("Moved from", { timeout: 15_000 });
+    // On the default budget. The inflated one covered a Server Action, a call to
+    // the API, a whole-page re-render and a refetch of the history, in that
+    // order; the move is one request now and there is nothing left for the extra
+    // ten seconds to absorb.
+    await expect(header(page).getByText("Interview")).toBeVisible();
+    await expect(feed(page)).toContainText("Moved from");
     await expect(feed(page)).toContainText("Applied");
+  });
+
+  test("shows the move without a second round trip to see it", async ({ page }) => {
+    await openAt(page, "Applied");
+
+    // Everything after the move's own request is refused. Nothing legitimate is
+    // lost by that - the move answers with the history it wrote - so this stays
+    // green until somebody reintroduces a follow-up request to show the result,
+    // and the day that happens it goes red for the right reason.
+    //
+    // An aborted request rather than a refused one, because that is the failure
+    // this guards: a dropped stream leaves a rejected fetch that TanStack Query
+    // swallows, and a query holding stale data ignores the fresh `initialData`
+    // the re-rendered page carries. The entry is then unreachable without a
+    // reload.
+    let writes = 0;
+    await page.route("**/applications/**", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+
+      writes += 1;
+      await (writes > 1 ? route.abort("failed") : route.continue());
+    });
+
+    const menu = await openTransitionMenu(page);
+    await menu.getByRole("menuitem", { name: "Interview" }).click();
+
+    await expect(header(page).getByText("Interview")).toBeVisible();
+    await expect(feed(page)).toContainText("Moved from");
+  });
+
+  test("still lands the move when its own read of the history fails", async ({ page }) => {
+    const email = await openAt(page, "Applied");
+
+    // Armed after the screen has rendered, so what fails is the read the move
+    // makes rather than the one that seeded the panel.
+    await failCalls(email, ["activity"]);
+
+    const menu = await openTransitionMenu(page);
+    await menu.getByRole("menuitem", { name: "Interview" }).click();
+
+    // The move is what is guaranteed here, and it shows. The timeline is
+    // deliberately left a beat behind rather than chased with a second request -
+    // one issued now would race the re-render this very response is delivering,
+    // which is the failure the single round trip exists to remove. Nothing on the
+    // screen claims otherwise, so there is no refusal to read.
+    await expect(header(page).getByText("Interview")).toBeVisible();
+    await expect(refusal(page)).toHaveCount(0);
   });
 
   test("reads a closure as a closure", async ({ page }) => {
@@ -125,7 +175,7 @@ test.describe("moving an application", () => {
     const menu = await openTransitionMenu(page);
     await menu.getByRole("menuitem", { name: "Withdrawn" }).click();
 
-    await expect(feed(page)).toContainText("Closed as", { timeout: 15_000 });
+    await expect(feed(page)).toContainText("Closed as");
     await expect(feed(page)).toContainText("Withdrawn");
   });
 
@@ -153,7 +203,9 @@ test.describe("moving an application", () => {
 
     // The retry is the action's, not the user's: one gesture, two requests, one
     // key - a new key would be a second move.
-    await expect(header(page).getByText("Screening")).toBeVisible({ timeout: 15_000 });
+    // The action's own wait before re-issuing is a second at minimum, so this one
+    // is slower than the rest by design - but only by that second.
+    await expect(header(page).getByText("Screening")).toBeVisible();
 
     const keys = await idempotencyKeys(email);
     expect(keys).toHaveLength(2);

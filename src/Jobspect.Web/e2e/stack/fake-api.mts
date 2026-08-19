@@ -53,6 +53,7 @@ type FailableCall =
   | "custom-fields"
   | "contacts"
   | "interviews"
+  | "activity"
   | "add-note"
   | "create-application"
   | "create-interview"
@@ -1220,6 +1221,15 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
       activity.set(userId, [...(activity.get(userId) ?? []), { applicationId, entry }]);
 
       send(response, 201, entry satisfies ActivityEntryResponse);
+      return;
+    }
+
+    // Spent on the first refusal rather than left armed, which is what makes it
+    // usable around a move: one read fails and the next succeeds, so a spec can
+    // arm it after the page has rendered and ask what the screen does when the
+    // history is read once and lost.
+    if (isFailing(userId, "activity")) {
+      sendProblem(response, 500, "internal", "The activity read is armed to fail.");
       return;
     }
 
