@@ -25,6 +25,7 @@ export { listActivity } from "./queries/list-activity";
 export {
   listApplications,
   listFirstPage,
+  MAX_PAGE_SIZE,
   PAGE_SIZE,
   type ApplicationPage,
 } from "./queries/list-applications";

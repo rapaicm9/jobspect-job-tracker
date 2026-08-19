@@ -21,8 +21,8 @@ racy, and both are behaving exactly as designed:
 - **A lost refetch is silent.** TanStack Query wraps each fetch it triggers in a rejection handler
   that discards the error, and `useInfiniteQuery` keeps its previous data when a fetch fails. A
   dropped request leaves the timeline holding what it already had, with nothing rendered to say so.
-- **A later server render cannot correct it.** `router.refresh()` merges the new payload *while
-  preserving client state* — that is its documented purpose — and the cache is client state. The
+- **A later server render cannot correct it.** `router.refresh()` merges the new payload _while
+  preserving client state_ — that is its documented purpose — and the cache is client state. The
   fresh first page it delivers arrives as `initialData`, which the query library applies only when
   the query holds no data. For a cache that has already been seeded it is inert.
 
@@ -32,7 +32,7 @@ the header and the timeline showed only the seeded entry across twenty-four poll
 Restoring the follow-up request reproduces it on demand.
 
 One further observation, recorded because it is easy to misread. Across ten consecutive moves the
-refresh's request consistently *started* after the refetch that was called after it — the arrangement
+refresh's request consistently _started_ after the refetch that was called after it — the arrangement
 was not a race in initiation order, it was a follow-up request that could be lost with no second
 chance behind it. Nothing in the framework's documentation describes that ordering, so it is recorded
 here as a measurement and not as a rule to rely on.
@@ -79,12 +79,12 @@ across retries of that intent, as backend ADR 0011 requires.
 
 - **`router.refresh()` after the action, plus a refetch.** The arrangement described above. It is
   the one this record exists to retire.
-- **Revalidating inside the action *and* keeping the two client round trips.** Tried and measured
+- **Revalidating inside the action _and_ keeping the two client round trips.** Tried and measured
   before this record: it made the failure more frequent, not less, by adding a third server render to
   the same sequence without removing either request.
 - **Invalidating the query on the failure branch**, so the timeline catches up when the action's own
   read of it fails. Implemented, then measured at **two failures in twenty repeats** — and the
-  assertion that failed was the *header*, because the invalidation's request collided with the
+  assertion that failed was the _header_, because the invalidation's request collided with the
   re-rendered page still being delivered. It reproduced this record's own defect inside its fix,
   which is why the branch now does nothing at all.
 - **Removing the cache entry so the fresh `initialData` seeds it again.** Rejected as racy in the

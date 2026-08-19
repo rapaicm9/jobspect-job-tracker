@@ -17,6 +17,13 @@ import { toApplicationRow, type ApplicationRow } from "../to-application-row";
  */
 export const PAGE_SIZE = 25;
 
+/**
+ * The most the endpoint will return in one page, which it refuses to exceed
+ * rather than silently trimming. The board asks for it: four columns each read
+ * once, so a column that cannot be walked has to say so instead of being paged.
+ */
+export const MAX_PAGE_SIZE = 100;
+
 export type ApplicationPage =
   | { kind: "page"; rows: ApplicationRow[]; nextCursor: string | null }
   /**
@@ -43,11 +50,19 @@ function knownStages(stage: readonly string[]): string[] {
 export interface ListApplicationsOptions {
   filters?: ApplicationFilters;
   cursor?: string | null;
+  /**
+   * Overridden only by a caller that reads a set once rather than walking it.
+   * Not reachable from `fetchApplicationsPage`, whose schema deliberately does
+   * not carry it: that export is a public endpoint, and the page size is not a
+   * thing a forged call gets to choose.
+   */
+  limit?: number;
 }
 
 export async function listApplications({
   filters = DEFAULT_FILTERS,
   cursor = null,
+  limit = PAGE_SIZE,
 }: ListApplicationsOptions = {}): Promise<ApplicationPage> {
   const session = await requireSession();
 
@@ -58,7 +73,7 @@ export async function listApplications({
       ...init,
       params: {
         query: {
-          limit: PAGE_SIZE,
+          limit,
           // Both or neither: the endpoint refuses a direction with nothing to
           // order by, and it names that error after the parameter it is missing.
           sortBy: filters.sortBy,

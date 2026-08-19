@@ -106,6 +106,20 @@ export function accountZone(timeZoneId: string | null): string {
   return formatterFor(partFormatters, timeZoneId, buildParts).resolvedOptions().timeZone;
 }
 
+/**
+ * What day it is where the account is, as `YYYY-MM-DD`.
+ *
+ * The one calendar question that genuinely needs a zone. `lib/dates.ts` formats a
+ * date without one because the day someone applied is that day wherever it is
+ * read - but whether a deadline is *near* compares it to now, and now is a
+ * different date either side of most zone boundaries for several hours a day.
+ */
+export function todayInZone(timeZoneId: string | null, at: number = Date.now()): string {
+  const { year, month, day } = partsAt(at, timeZoneId);
+
+  return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
+}
+
 interface ZonedParts {
   year: number;
   month: number;

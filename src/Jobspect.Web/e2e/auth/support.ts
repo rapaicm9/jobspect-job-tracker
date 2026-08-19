@@ -257,6 +257,24 @@ export async function failCalls(email: string, calls: string[]): Promise<void> {
 }
 
 /**
+ * Fails the list read for the named stages, and only those.
+ *
+ * `failCalls` names an endpoint, which cannot separate two reads of the same one.
+ * The board makes five and degrades each on its own, so the assertion worth
+ * having - one broken column, three still standing - needs a seam that refuses
+ * exactly one of them.
+ */
+export async function failStageReads(email: string, stages: string[]): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/fail-stage-reads`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, stages }),
+  });
+
+  expect(response.status, "the fake API armed the failing stage read").toBe(204);
+}
+
+/**
  * Seeds an application's timeline.
  *
  * The API writes a Created entry with every application and a StageChanged entry

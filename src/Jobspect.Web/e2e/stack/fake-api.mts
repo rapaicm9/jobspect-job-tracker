@@ -237,6 +237,31 @@ const campaigns = new Map<string, CampaignResponse[]>();
  */
 const expiredCursors = new Set<string>();
 
+/**
+ * Which stage-filtered list reads answer 500, per account.
+ *
+ * Separate from `failingCalls`, whose vocabulary is one entry per endpoint and so
+ * cannot tell two reads of the same endpoint apart. The board makes five of them
+ * and degrades each one on its own, and the assertion worth having is that one
+ * broken column leaves the other three standing - which needs a seam that can
+ * refuse exactly one.
+ *
+ * Armed rather than spent, like the other read armings: the page renders more than
+ * once and the column has to still be down when it does.
+ */
+const failingStageReads = new Map<string, Set<string>>();
+
+/** Whether this read is the one a spec armed, by the stages it asked for. */
+function isFailingStageRead(userId: string, stages: string[]): boolean {
+  const armed = failingStageReads.get(userId);
+  if (armed === undefined) return false;
+
+  // Every stage the read named has to be armed. A read of one stage matches the
+  // arming for that stage; the closed count, which names four, matches only an
+  // arming that covers all four.
+  return stages.length > 0 && stages.every((stage) => armed.has(stage));
+}
+
 function accountKey(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -853,6 +878,22 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  // Fails the list read for named stages, which is how a board spec takes down
+  // one column and leaves the rest of the screen standing.
+  if (method === "POST" && path === "/__test/fail-stage-reads") {
+    const body = await readJson<{ email: string; stages: string[] }>(request);
+    const account = accounts.get(accountKey(body?.email ?? ""));
+
+    if (body === null || account === undefined) {
+      sendProblem(response, 404, "account.not_found", "Name the account to fail stage reads for.");
+      return;
+    }
+
+    failingStageReads.set(account.userId, new Set(body.stages));
+    send(response, 204, undefined);
+    return;
+  }
+
   // Seeds a timeline. The API writes a Created entry with every application, so
   // a spec that wants history states it here rather than driving transitions
   // this client cannot make yet.
@@ -1028,6 +1069,11 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     const campaignId = query.get("campaignId");
     const limit = Number(query.get("limit") ?? 25);
     const cursor = query.get("cursor");
+
+    if (isFailingStageRead(userId, stages)) {
+      sendProblem(response, 500, "server.error", "Something went wrong.");
+      return;
+    }
 
     let offset = 0;
     if (cursor !== null) {

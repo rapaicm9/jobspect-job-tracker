@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDate } from "@/lib/dates";
+import { daysUntil, formatDate } from "@/lib/dates";
 
 describe("formatDate", () => {
   it("renders a plain date the way it was sent", () => {
@@ -45,5 +45,34 @@ describe("formatDate", () => {
 
   it("answers null for a well-shaped date that does not exist", () => {
     expect(formatDate("2026-02-30")).not.toBe("30 Feb 2026");
+  });
+});
+
+describe("daysUntil", () => {
+  it("counts forward, backward and not at all", () => {
+    expect(daysUntil("2026-08-19", "2026-08-19")).toBe(0);
+    expect(daysUntil("2026-08-22", "2026-08-19")).toBe(3);
+    expect(daysUntil("2026-08-18", "2026-08-19")).toBe(-1);
+  });
+
+  it("crosses a month and a year without help", () => {
+    expect(daysUntil("2026-09-01", "2026-08-30")).toBe(2);
+    expect(daysUntil("2027-01-01", "2026-12-30")).toBe(2);
+  });
+
+  it("counts whole days across a daylight-saving change", () => {
+    // The reason both sides are read at midnight UTC. London springs forward on
+    // 29 March 2026, so a zone-aware subtraction over that weekend is 23 hours
+    // and rounds to a day less - which would make a deadline read as one day
+    // nearer than it is, for two days a year.
+    expect(daysUntil("2026-03-30", "2026-03-28")).toBe(2);
+    expect(daysUntil("2026-10-26", "2026-10-24")).toBe(2);
+  });
+
+  it("answers null when either side is not a plain date", () => {
+    expect(daysUntil("2026-08-19T09:00:00Z", "2026-08-19")).toBeNull();
+    expect(daysUntil("2026-08-19", "not a date")).toBeNull();
+    expect(daysUntil(null, "2026-08-19")).toBeNull();
+    expect(daysUntil("2026-08-19", undefined)).toBeNull();
   });
 });
