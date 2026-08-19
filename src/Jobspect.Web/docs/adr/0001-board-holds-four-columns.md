@@ -2,8 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-08
-- **Amended:** 2026-08-19 — the closed chip counts approximately, a step back is not a drop target,
-  and the unrecognised-stage column turned out to be unreachable. See _Revision history_.
+- **Amended:** 2026-08-20 — the closed chip counts approximately and does not move optimistically, a
+  step back is not a drop target, the unrecognised-stage column turned out to be unreachable, and
+  the close-out zone is revealed by the gesture. See _Revision history_.
 
 ## Context
 
@@ -21,7 +22,10 @@ The board shows **four columns: Applied, Screening, Interview, Offer.**
 
 - Closing an application is a **different gesture** from advancing it: a "Close out" drop zone that
   opens an outcome picker, or the transition menu on the card. A terminal move is not a fifth
-  column to the right.
+  column to the right. **The zone exists only while a card is in hand** — it appears below the
+  columns when a drag starts and goes with it — and **the picker offers only the outcomes the
+  pipeline allows from that stage**, so Accepted is on it from Offer and from nowhere else. The drop
+  itself writes nothing: it asks the question, and the picker is where it is answered.
 - **Closed applications live in the Applications list**, behind an outcome filter. The board header
   carries a chip counting them, linking to that filtered list. **The count is an approximation and
   says so**: `GET /api/v1/applications` returns no totals (backend ADR 0008 settles paging as
@@ -54,6 +58,11 @@ Three arguments fix this, in order of weight:
 - The board route renders four columns; the drag-and-drop target model has four ordered targets
   plus one close-out zone, and the zone's drop handler opens a picker rather than committing a
   transition.
+- **The closed chip is not corrected optimistically.** A close-out takes the card out of its column
+  immediately and leaves the chip reporting its old number until the write's own re-render lands.
+  Covering that window would mean putting the chip inside the optimistic subtree, which is a change
+  to the page's structure to buy consistency for less time than the picker takes to animate closed —
+  and the chip is an approximation that already says so.
 - Reaching a closed application is a filter on the list, so the list's outcome filter is not
   optional polish — it is the only path to that data. The chip therefore renders even when its
   count could not be read, carrying no number rather than no link.
@@ -112,6 +121,14 @@ Three arguments fix this, in order of weight:
   gesture would mean deliberately inviting a refusal the transition menu pointedly does not offer.
   Recorded here because the two are one decision about where the client's model of the state machine
   is allowed to act.
+- **2026-08-20 — the close-out zone, as built.** The original named a drop zone that opens an
+  outcome picker and left three things open that building it settled. The zone is **revealed by the
+  gesture** rather than standing permanently: closing happens once per application, and a strip
+  across the board the rest of the time is weight for a rare action. The picker is **filtered by the
+  state machine** rather than offering all four outcomes, which is the same rule the transition menu
+  follows — offering Accepted from Applied would be inviting a refusal. And the closed chip beside
+  it is **left to the re-render**, recorded under _Consequences_ because a reader of the columns
+  alone would expect it to move with them.
 - **2026-08-19 — the unrecognised-stage column is struck.** It cannot be reached. The board reads
   one request per column, each naming a single stage, and the endpoint narrows to the stages it was
   given — so no read can answer with a row in a stage that was not asked for. The instruction

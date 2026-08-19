@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { expect, type BrowserContext, type Page } from "@playwright/test";
+import { expect, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import Redis from "ioredis";
 
 import { FAKE_API_ORIGIN, REDIS_PORT } from "../stack/ports";
@@ -171,6 +171,86 @@ export async function openTransitionMenu(page: Page) {
   }).toPass({ timeout: 15_000 });
 
   return menu;
+}
+
+/**
+ * The board's close-out zone, which only exists while a card is in hand.
+ *
+ * Matched on the half of the label that is unique: the picker it opens is titled
+ * "Close out {role}", so the first two words are not enough to tell them apart.
+ */
+export function closeOutZone(page: Page): Locator {
+  return page.getByText("drop to record an outcome");
+}
+
+/**
+ * Presses a card's grip and starts the drag, leaving the pointer just off it.
+ *
+ * Real pointer events rather than Playwright's `dragTo`, which dispatches the
+ * HTML5 drag-and-drop events that dnd-kit's PointerSensor does not listen for -
+ * that call succeeds and moves nothing, which is the worst shape a test failure
+ * can take.
+ *
+ * Split out from the drag because the close-out zone does not exist until the
+ * drag is live: a spec has to lift the card before it can find its target. No
+ * pause after the press either - the sensor's default constraints return none at
+ * all for a mouse whose press landed on the drag handle, so one small move is
+ * enough to make the drag live.
+ */
+export async function liftCard(page: Page, role: string): Promise<void> {
+  const handle = page.getByRole("button", { name: `Move ${role}` });
+  await handle.scrollIntoViewIfNeeded();
+
+  const from = await handle.boundingBox();
+  expect(from, "the card's drag handle is on screen").not.toBeNull();
+
+  await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2 + 4);
+}
+
+/**
+ * Finishes a lift over a target and releases.
+ *
+ * The intermediate steps are what give collision detection something to run
+ * against; a single jump can land the pointer on the target without ever having
+ * been detected over it. The second move is so the drop happens on a pointer
+ * position the collision pass has already seen rather than on the one that
+ * arrived with it.
+ */
+export async function dropOnTarget(target: Locator, name: string): Promise<void> {
+  const page = target.page();
+  const to = await target.boundingBox();
+  expect(to, `${name} is on screen`).not.toBeNull();
+
+  await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height / 2, { steps: 16 });
+  await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height / 2 + 8, { steps: 4 });
+  await page.mouse.up();
+}
+
+/** Drags a card by its grip and drops it on a column. */
+export async function dragCardTo(page: Page, role: string, stage: string): Promise<void> {
+  await liftCard(page, role);
+  await dropOnTarget(page.getByRole("region", { name: stage }), `the ${stage} column`);
+}
+
+/**
+ * Drags a card onto the close-out zone and waits for the picker it opens.
+ *
+ * The zone is looked up after the lift rather than before it, which is the whole
+ * shape of this helper: it is not on the board at rest.
+ */
+export async function dragCardToCloseOut(page: Page, role: string): Promise<Locator> {
+  await liftCard(page, role);
+
+  const zone = closeOutZone(page);
+  await expect(zone).toBeVisible();
+  await dropOnTarget(zone, "the close-out zone");
+
+  const picker = page.getByRole("dialog");
+  await expect(picker).toBeVisible();
+
+  return picker;
 }
 
 /**

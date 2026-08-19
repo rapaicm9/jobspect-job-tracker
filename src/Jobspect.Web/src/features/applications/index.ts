@@ -1,4 +1,5 @@
 export { advanceApplication } from "./actions/advance-application";
+export { closeApplication } from "./actions/close-application";
 export { type ApplicationDetail } from "./application-detail";
 export { ActivityTimeline } from "./components/activity-timeline";
 export { AddApplicationButton } from "./components/add-application-button";

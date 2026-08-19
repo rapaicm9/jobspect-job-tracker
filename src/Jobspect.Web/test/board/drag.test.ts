@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { legalMoves } from "@/features/applications/stage-moves";
 import { toBoardCard, type BoardCard, type BoardColumn } from "@/features/board/board";
-import { applyOptimisticMove, stagesAcceptedBy } from "@/features/board/drag";
-import { ACTIVE_STAGES, type ActiveStage } from "@/lib/enums";
+import {
+  applyOptimisticMove,
+  closeOutcomesFor,
+  findCard,
+  stagesAcceptedBy,
+} from "@/features/board/drag";
+import { ACTIVE_STAGES, TERMINAL_STAGES, type ActiveStage } from "@/lib/enums";
 
 const TODAY = "2026-08-19";
 
@@ -51,6 +56,63 @@ describe("stagesAcceptedBy", () => {
     for (const stage of ACTIVE_STAGES) {
       expect(stagesAcceptedBy(stage)).not.toContain(stage);
     }
+  });
+});
+
+describe("closeOutcomesFor", () => {
+  it("agrees with the pipeline for every active stage", () => {
+    // The second transcription of the state machine on this screen, guarded the
+    // way the accept rules above are: `legalMoves` is what the transition menu
+    // ships and what the exhaustive stage-machine test already covers.
+    for (const stage of ACTIVE_STAGES) {
+      expect(closeOutcomesFor(stage), stage).toEqual(legalMoves(stage).closeAs);
+    }
+  });
+
+  it("offers Accepted from Offer and from nowhere else", () => {
+    // It is the one outcome that has to be earned, so only an application holding
+    // an offer can reach it. Offering it elsewhere would invite a refusal.
+    expect(closeOutcomesFor("Offer")).toContain("Accepted");
+
+    for (const stage of ["Applied", "Screening", "Interview"] as const) {
+      expect(closeOutcomesFor(stage), stage).not.toContain("Accepted");
+    }
+  });
+
+  it("always offers somewhere to go, so no card is stuck on the board", () => {
+    for (const stage of ACTIVE_STAGES) {
+      expect(closeOutcomesFor(stage).length, stage).toBeGreaterThan(0);
+    }
+  });
+
+  it("names only terminal stages", () => {
+    for (const stage of ACTIVE_STAGES) {
+      for (const outcome of closeOutcomesFor(stage)) {
+        expect(TERMINAL_STAGES).toContain(outcome);
+      }
+    }
+  });
+});
+
+describe("findCard", () => {
+  const columns: BoardColumn[] = [
+    loaded("Applied", [aCard("a", "2026-08-10")]),
+    { kind: "failed", stage: "Screening" },
+    loaded("Interview", [aCard("b", "2026-08-05")]),
+  ];
+
+  it("finds a card in any loaded column", () => {
+    expect(findCard(columns, "b")?.id).toBe("b");
+  });
+
+  it("answers undefined for a card this board does not hold", () => {
+    // A drop naming a card the board cannot show is a drag already reconciled,
+    // and the picker has nothing to name.
+    expect(findCard(columns, "gone")).toBeUndefined();
+  });
+
+  it("looks straight past a column whose read failed", () => {
+    expect(findCard([{ kind: "failed", stage: "Offer" }], "a")).toBeUndefined();
   });
 });
 
@@ -142,6 +204,32 @@ describe("applyOptimisticMove", () => {
     const columns = [loaded("Applied", [aCard("a", "2026-08-10")]), loaded("Interview", [])];
 
     expect(applyOptimisticMove(columns, move)).toBe(columns);
+  });
+
+  it("takes a closed-out card off the board entirely", () => {
+    // A terminal stage has no column, so the card leaves the one it was in and
+    // joins none. That needs no branch of its own and this is what says so.
+    const columns = [
+      loaded("Applied", [aCard("a", "2026-08-10"), aCard("b", "2026-08-05")]),
+      loaded("Interview", []),
+    ];
+
+    const applied = applyOptimisticMove(columns, { cardId: "b", from: "Applied", to: "Rejected" });
+
+    expect(applied[0]?.kind === "loaded" && applied[0].cards.map((c) => c.id)).toEqual(["a"]);
+    expect(applied[1]?.kind === "loaded" && applied[1].cards).toEqual([]);
+  });
+
+  it("leaves a truncated column truncated when a card is closed out of it", () => {
+    const columns = [loaded("Applied", [aCard("b", "2026-08-05")], true)];
+
+    const [applied] = applyOptimisticMove(columns, {
+      cardId: "b",
+      from: "Applied",
+      to: "Withdrawn",
+    });
+
+    expect(applied?.kind === "loaded" && applied.truncated).toBe(true);
   });
 
   it("does not mutate the columns it was given", () => {

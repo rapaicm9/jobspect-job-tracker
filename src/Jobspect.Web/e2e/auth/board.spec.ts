@@ -3,9 +3,13 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   anEmail,
   applicationRequestCount,
+  closeOutZone,
+  dragCardTo,
+  dragCardToCloseOut,
   failCalls,
   failStageReads,
   idempotencyKeys,
+  liftCard,
   openTransitionMenu,
   registerThroughTheForm,
   seedApplications,
@@ -63,38 +67,6 @@ async function signInWith(page: Page, applications: Record<string, unknown>[]): 
   await page.goto("/board");
 
   return email;
-}
-
-/**
- * Drags a card by its grip and drops it on a column.
- *
- * Real pointer events rather than Playwright's `dragTo`, which dispatches the
- * HTML5 drag-and-drop events that dnd-kit's PointerSensor does not listen for -
- * that call succeeds and moves nothing, which is the worst shape a test failure
- * can take.
- *
- * No pause after the press: the sensor's default constraints return none at all
- * for a mouse whose press landed on the drag handle, so the drag is live from the
- * first move. The intermediate steps are what give collision detection something
- * to run against; a single jump can land the pointer on the target without ever
- * having been detected over it.
- */
-async function dragCardTo(page: Page, role: string, stage: string): Promise<void> {
-  const handle = page.getByRole("button", { name: `Move ${role}` });
-  await handle.scrollIntoViewIfNeeded();
-
-  const from = await handle.boundingBox();
-  const to = await column(page, stage).boundingBox();
-  expect(from, "the card's drag handle is on screen").not.toBeNull();
-  expect(to, `the ${stage} column is on screen`).not.toBeNull();
-
-  await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height / 2, { steps: 16 });
-  // A second move over the target, so the drop happens on a pointer position the
-  // collision pass has already seen rather than on the one that arrived with it.
-  await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height / 2 + 8, { steps: 4 });
-  await page.mouse.up();
 }
 
 function manyIn(stage: string, count: number) {
@@ -492,6 +464,150 @@ test.describe("dragging a card", () => {
 
     await expect(column(page, "Screening")).toContainText("Frontend Engineer");
     await expect(column(page, "Applied")).toContainText("Nothing in this stage.");
+  });
+});
+
+test.describe("closing a card out", () => {
+  test("offers no zone until a card is in hand", async ({ page }) => {
+    // Closing happens once per application, and a strip standing across the board
+    // for it would be weight the rest of the time. It arrives with the gesture
+    // that can use it.
+    await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    await expect(closeOutZone(page)).toBeHidden();
+
+    await liftCard(page, "Frontend Engineer");
+    await expect(closeOutZone(page)).toBeVisible();
+
+    await page.mouse.up();
+  });
+
+  test("asks which outcome rather than deciding one", async ({ page }) => {
+    // The drop is the question, not the answer. Nothing moves and nothing is
+    // written until the picker has been answered - a card that left its column
+    // here would be claiming a decision the user has not made.
+    const email = await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    const picker = await dragCardToCloseOut(page, "Frontend Engineer");
+
+    await expect(picker).toContainText("Close out Frontend Engineer");
+    expect(await idempotencyKeys(email), "no write was attempted").toEqual([]);
+
+    // The columns are deliberately not read here. The picker is modal, so the
+    // board behind it is out of the accessibility tree and `column()` finds
+    // nothing at all - which is correct, and is why the card's position is
+    // asserted by the dismissal spec below instead of from in here.
+  });
+
+  test("offers Accepted from Offer and from nowhere else", async ({ page }) => {
+    // The state machine, asserted where a user meets it: Accepted is the one
+    // outcome that has to be earned, so only an application holding an offer can
+    // reach it. Offering it elsewhere would invite a refusal.
+    await signInWith(page, [
+      { stage: "Offer", role: "Has an offer" },
+      { stage: "Applied", role: "Just applied" },
+    ]);
+
+    const fromOffer = await dragCardToCloseOut(page, "Has an offer");
+    for (const outcome of ["Accepted", "Rejected", "Withdrawn", "Ghosted"]) {
+      await expect(fromOffer.getByRole("button", { name: outcome })).toBeVisible();
+    }
+
+    await fromOffer.getByRole("button", { name: "Cancel" }).click();
+    await expect(fromOffer).toBeHidden();
+
+    const fromApplied = await dragCardToCloseOut(page, "Just applied");
+    await expect(fromApplied.getByRole("button", { name: "Accepted" })).toBeHidden();
+    for (const outcome of ["Rejected", "Withdrawn", "Ghosted"]) {
+      await expect(fromApplied.getByRole("button", { name: outcome })).toBeVisible();
+    }
+  });
+
+  test("takes the card off the board and counts it under the chip", async ({ page }) => {
+    // The board holds no column for a closed application (ADR 0001), so the card
+    // leaves rather than moving. The chip is the only route to it from here.
+    await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+    await expect(page.getByRole("link", { name: "0 closed" })).toBeVisible();
+
+    const picker = await dragCardToCloseOut(page, "Frontend Engineer");
+    await picker.getByRole("button", { name: "Rejected" }).click();
+
+    await expect(column(page, "Applied")).toContainText("Nothing in this stage.");
+    await expect(page.getByRole("link", { name: "1 closed" })).toBeVisible();
+  });
+
+  test("survives the answer rather than snapping back on success", async ({ page }) => {
+    // React drops an optimistic value the moment the action settles, so the card
+    // stays gone only because the action revalidated this route. Remove that and
+    // this goes red while the close still lands.
+    await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    const picker = await dragCardToCloseOut(page, "Frontend Engineer");
+    await picker.getByRole("button", { name: "Withdrawn" }).click();
+
+    await expect(column(page, "Applied")).toContainText("Nothing in this stage.");
+
+    await page.reload();
+    await expect(column(page, "Applied")).toContainText("Nothing in this stage.");
+    await expect(page.getByRole("link", { name: "1 closed" })).toBeVisible();
+  });
+
+  test("changes nothing when the picker is dismissed", async ({ page }) => {
+    const email = await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    const picker = await dragCardToCloseOut(page, "Frontend Engineer");
+    await picker.getByRole("button", { name: "Cancel" }).click();
+
+    await expect(picker).toBeHidden();
+    await expect(column(page, "Applied")).toContainText("Frontend Engineer");
+    expect(await idempotencyKeys(email), "no write was attempted").toEqual([]);
+  });
+
+  test("returns the card and says why when the pipeline refuses", async ({ page }) => {
+    const email = await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+    await failCalls(email, ["transition-illegal"]);
+
+    const picker = await dragCardToCloseOut(page, "Frontend Engineer");
+    await picker.getByRole("button", { name: "Ghosted" }).click();
+
+    // The board's one alert region, shared with the drag: by the time it renders
+    // the card is back where it was, which may be scrolled out of view.
+    await expect(refusal(page)).toContainText("cannot move from");
+    await expect(column(page, "Applied")).toContainText("Frontend Engineer");
+  });
+
+  test("reuses one key when the first attempt is still in flight", async ({ page }) => {
+    const email = await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+    await failCalls(email, ["transition-in-flight"]);
+
+    const picker = await dragCardToCloseOut(page, "Frontend Engineer");
+    await picker.getByRole("button", { name: "Rejected" }).click();
+
+    await expect.poll(() => idempotencyKeys(email)).toHaveLength(2);
+
+    // Two requests, one key. A fresh key on the retry is how one close-out becomes
+    // two moves, which is the guarantee ADR 0011 exists for.
+    expect(new Set(await idempotencyKeys(email)).size).toBe(1);
+  });
+
+  test("costs one write and one repaint", async ({ page }) => {
+    // The same budget the drag has. The per-IP limiter is shared by every user of
+    // a deployment, so a second gesture that cost more would be worth knowing
+    // about before it shipped.
+    const email = await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    const before = await applicationRequestCount(email);
+    const picker = await dragCardToCloseOut(page, "Frontend Engineer");
+    await picker.getByRole("button", { name: "Rejected" }).click();
+
+    await expect(column(page, "Applied")).toContainText("Nothing in this stage.");
+    await expect.poll(() => applicationRequestCount(email)).toBe(before + 5);
+
+    // And it rests there. A sixth read arriving a moment later is exactly the
+    // regression this exists to catch.
+    await page.waitForTimeout(1_000);
+    expect((await applicationRequestCount(email)) - before).toBe(5);
+    expect(await idempotencyKeys(email)).toHaveLength(1);
   });
 });
 

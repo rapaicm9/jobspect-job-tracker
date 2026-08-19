@@ -17,15 +17,19 @@ import { StyleInjector } from "@dnd-kit/dom";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useOptimistic, useRef, useState, useTransition } from "react";
 
-import { ACTIVE_STAGES, type ActiveStage } from "@/lib/enums";
+import { ACTIVE_STAGES, type ActiveStage, type TerminalStage } from "@/lib/enums";
 import { keyForIntent, type Intent } from "@/lib/idempotency";
 import { Alert, AlertDescription } from "@/ui/alert";
 
+import { closeCard } from "../actions/close-card";
 import { moveCard } from "../actions/move-card";
 import type { Board } from "../board";
-import { applyOptimisticMove } from "../drag";
+import { applyOptimisticMove, CLOSE_OUT_TARGET, findCard, type OptimisticMove } from "../drag";
+import { problemFor, type MoveOutcome } from "../move";
 
 import { BoardColumns } from "./board-columns";
+import { CloseOutDialog, type ClosingCard } from "./close-out-dialog";
+import { CloseOutZone } from "./close-out-zone";
 
 export interface BoardDragProps {
   board: Board;
@@ -51,6 +55,12 @@ export function BoardDrag({ board, campaignId, nonce }: BoardDragProps) {
   const [problem, setProblem] = useState<string | null>(null);
   const [, startMoving] = useTransition();
 
+  /** Set by a drop on the close-out zone, cleared by picking or dismissing. */
+  const [closing, setClosing] = useState<ClosingCard | null>(null);
+
+  // Where the picker sends focus when it closes. See `CloseOutDialog`.
+  const boardRef = useRef<HTMLDivElement>(null);
+
   /**
    * The move as it looks before the server has answered.
    *
@@ -73,6 +83,44 @@ export function BoardDrag({ board, campaignId, nonce }: BoardDragProps) {
   // The key belongs to the destination, so dropping the same card on the same
   // column twice is one intent and dropping it elsewhere is another.
   const intent = useRef<Intent | null>(null);
+
+  /**
+   * One optimistic move and the write behind it, whichever gesture raised it.
+   *
+   * Shared by the drag and the close-out because the two differ only in where the
+   * card is going and which action is spoken to. Everything around that - the key,
+   * the transition, what a refusal says - is one behaviour, and it was one switch
+   * copied twice before this existed.
+   */
+  const move = (change: OptimisticMove, write: (key: string) => Promise<MoveOutcome>) => {
+    intent.current = keyForIntent(intent.current, `${change.cardId}:${change.to}`);
+    const { key } = intent.current;
+
+    setProblem(null);
+
+    startMoving(async () => {
+      applyMove(change);
+
+      const result = await write(key);
+
+      // Spent. The next drag of this card is a new intent, even to the same
+      // destination, because the first one is no longer in flight.
+      if (result.kind === "moved") intent.current = null;
+
+      setProblem(problemFor(result));
+    });
+  };
+
+  const closeOut = (outcome: TerminalStage) => {
+    if (closing === null) return;
+
+    const { card, from } = closing;
+    setClosing(null);
+
+    move({ cardId: card.id, from, to: outcome }, (key) =>
+      closeCard({ applicationId: card.id, outcome, idempotencyKey: key }),
+    );
+  };
 
   return (
     <DragDropProvider
@@ -98,65 +146,35 @@ export function BoardDrag({ board, campaignId, nonce }: BoardDragProps) {
         const from = String(source.type ?? "");
         const to = String(target.id);
 
+        if (!isActiveStage(from)) return;
+
+        // The close-out zone, checked before the column guard below because it is
+        // the one target whose id is not a stage. Nothing is written and nothing
+        // moves: the drop asks the question and the picker is where it is
+        // answered, so a card that lifted out of its column here would be
+        // claiming a decision the user has not made.
+        if (to === CLOSE_OUT_TARGET) {
+          const card = findCard(columns, cardId);
+          if (card === undefined) return;
+
+          setProblem(null);
+          setClosing({ card, from });
+          return;
+        }
+
         // A drop back where it started is not a transition, and the pipeline
         // would refuse it by name. The accept rules already stop a backward drop
         // registering at all; this covers the same column.
         if (from === to) return;
-        if (!isActiveStage(from) || !isActiveStage(to)) return;
+        if (!isActiveStage(to)) return;
 
-        intent.current = keyForIntent(intent.current, `${cardId}:${to}`);
-        const { key } = intent.current;
-
-        setProblem(null);
-
-        startMoving(async () => {
-          applyMove({ cardId, from, to });
-
-          const result = await moveCard({
-            applicationId: cardId,
-            targetStage: to,
-            idempotencyKey: key,
-          });
-
-          switch (result.kind) {
-            case "moved":
-              // Spent. The next drag of this card is a new intent, even to the
-              // same column, because the first one is no longer in flight.
-              intent.current = null;
-              return;
-
-            case "illegal":
-              // The server's own sentence, which names both stages. It happens
-              // when this tab's board is stale - another tab moved the card, and
-              // nothing invalidates a Router Cache across tabs.
-              setProblem(result.detail);
-              return;
-
-            case "unavailable":
-              setProblem("The pipeline could not be reached just now. Try again in a moment.");
-              return;
-
-            case "in-flight":
-              setProblem("This move is still being applied. Give it a moment.");
-              return;
-
-            case "rate-limited":
-              // The one refusal where "try again" is the wrong advice, so it says
-              // how long instead whenever the API named a figure.
-              setProblem(
-                result.retryAfterSeconds === null
-                  ? "Too many requests just now. Wait a moment before moving anything else."
-                  : `Too many requests just now. Try again in ${String(result.retryAfterSeconds)} seconds.`,
-              );
-              return;
-
-            case "failed":
-              setProblem("That move did not go through. Try again.");
-          }
-        });
+        move({ cardId, from, to }, (key) =>
+          moveCard({ applicationId: cardId, targetStage: to, idempotencyKey: key }),
+        );
       }}
     >
-      <div className="flex flex-col gap-4">
+      {/* Focusable only programmatically, as the picker's landing place. */}
+      <div ref={boardRef} tabIndex={-1} className="flex flex-col gap-4 outline-none">
         {problem !== null && (
           // One region rather than one per card: by the time this renders the
           // card is back in the column it came from, which may be scrolled out of
@@ -168,7 +186,18 @@ export function BoardDrag({ board, campaignId, nonce }: BoardDragProps) {
         )}
 
         <BoardColumns columns={columns} campaignId={campaignId} />
+
+        <CloseOutZone />
       </div>
+
+      <CloseOutDialog
+        closing={closing}
+        onDismiss={() => {
+          setClosing(null);
+        }}
+        onPick={closeOut}
+        boardRef={boardRef}
+      />
     </DragDropProvider>
   );
 }
