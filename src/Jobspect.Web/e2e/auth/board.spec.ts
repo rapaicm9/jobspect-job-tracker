@@ -4,12 +4,15 @@ import {
   anEmail,
   applicationRequestCount,
   closeOutZone,
+  dragAnnouncement,
   dragCardTo,
   dragCardToCloseOut,
   failCalls,
   failStageReads,
   idempotencyKeys,
   liftCard,
+  liftCardWithKeyboard,
+  moveAnnouncement,
   openTransitionMenu,
   registerThroughTheForm,
   seedApplications,
@@ -608,6 +611,140 @@ test.describe("closing a card out", () => {
     await page.waitForTimeout(1_000);
     expect((await applicationRequestCount(email)) - before).toBe(5);
     expect(await idempotencyKeys(email)).toHaveLength(1);
+  });
+});
+
+test.describe("the keyboard", () => {
+  test("announces the application rather than its id", async ({ page }) => {
+    // The assertion that earns the whole announcements module. dnd-kit ships
+    // announcements of its own and they read "Picked up draggable item
+    // 88888888-8888-…", because an id is the only thing the library knows about
+    // a card. Restore the default and this goes red.
+    const id = "88888888-8888-4888-8888-888888888888";
+    await signInWith(page, [
+      { id, stage: "Applied", role: "Frontend Engineer", companyName: "Acme" },
+    ]);
+
+    await liftCardWithKeyboard(page, "Frontend Engineer");
+
+    await expect(dragAnnouncement(page)).toContainText("Frontend Engineer at Acme");
+    await expect(dragAnnouncement(page)).toContainText("in Applied");
+    await expect(dragAnnouncement(page)).not.toContainText(id);
+  });
+
+  test("steps one column per press rather than nudging pixels", async ({ page }) => {
+    // dnd-kit's own keyboard sensor moves the drag ten pixels an arrow press, so
+    // crossing this board would take sixty of them. Each press here is a column.
+    await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    await liftCardWithKeyboard(page, "Frontend Engineer");
+
+    await page.keyboard.press("ArrowRight");
+    await expect(dragAnnouncement(page)).toContainText("over Screening, column 2 of 4");
+
+    await page.keyboard.press("ArrowRight");
+    await expect(dragAnnouncement(page)).toContainText("over Interview, column 3 of 4");
+
+    await page.keyboard.press("ArrowLeft");
+    await expect(dragAnnouncement(page)).toContainText("over Screening, column 2 of 4");
+  });
+
+  test("moves the card and says that it moved", async ({ page }) => {
+    await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    await liftCardWithKeyboard(page, "Frontend Engineer");
+    await page.keyboard.press("ArrowRight");
+    await expect(dragAnnouncement(page)).toContainText("over Screening");
+    await page.keyboard.press("Space");
+
+    await expect(column(page, "Screening")).toContainText("Frontend Engineer");
+    await expect(column(page, "Applied")).toContainText("Nothing in this stage.");
+
+    // Nothing on screen says a drag worked - the card is simply somewhere else,
+    // which the eye reads and a screen reader does not.
+    await expect(moveAnnouncement(page)).toContainText("Frontend Engineer moved to Screening");
+  });
+
+  test("puts the card back on escape, and writes nothing", async ({ page }) => {
+    const email = await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    await liftCardWithKeyboard(page, "Frontend Engineer");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Escape");
+
+    await expect(column(page, "Applied")).toContainText("Frontend Engineer");
+    await expect(dragAnnouncement(page)).toContainText("left where it was");
+    expect(await idempotencyKeys(email), "no write was attempted").toEqual([]);
+  });
+
+  test("puts the card back on tab, rather than moving an application", async ({ page }) => {
+    // dnd-kit's default ends the drag on tab, which drops the card on whatever it
+    // is over - so tabbing away from a lifted card commits a pipeline transition,
+    // using the key people press to leave something alone.
+    const email = await signInWith(page, [{ stage: "Applied", role: "Frontend Engineer" }]);
+
+    await liftCardWithKeyboard(page, "Frontend Engineer");
+    await page.keyboard.press("ArrowRight");
+    await expect(dragAnnouncement(page)).toContainText("over Screening");
+
+    await page.keyboard.press("Tab");
+
+    await expect(column(page, "Applied")).toContainText("Frontend Engineer");
+    await expect(column(page, "Screening")).toContainText("Nothing in this stage.");
+    expect(await idempotencyKeys(email), "no write was attempted").toEqual([]);
+  });
+
+  test("never offers a column the pipeline would refuse", async ({ page }) => {
+    // An earlier column is not a drop target at all, so there is nothing to the
+    // left of a card in Interview and the arrow key has nowhere to go.
+    const email = await signInWith(page, [{ stage: "Interview", role: "Frontend Engineer" }]);
+
+    await liftCardWithKeyboard(page, "Frontend Engineer");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+
+    await expect(dragAnnouncement(page)).not.toContainText("over Applied");
+    await expect(dragAnnouncement(page)).not.toContainText("over Screening");
+
+    await page.keyboard.press("Space");
+    await expect(column(page, "Interview")).toContainText("Frontend Engineer");
+    expect(await idempotencyKeys(email)).toEqual([]);
+  });
+
+  test("reaches the close-out area downwards and opens the picker", async ({ page }) => {
+    await signInWith(page, [{ stage: "Offer", role: "Frontend Engineer" }]);
+
+    await liftCardWithKeyboard(page, "Frontend Engineer");
+    await page.keyboard.press("ArrowDown");
+    await expect(dragAnnouncement(page)).toContainText("close-out area");
+
+    await page.keyboard.press("Space");
+
+    // Announced as something that wants an answer, because a listener told only
+    // "dropped" has no idea anything is now waiting for them.
+    await expect(dragAnnouncement(page)).toContainText("Choose an outcome");
+
+    const picker = page.getByRole("dialog");
+    await expect(picker).toBeVisible();
+    await picker.getByRole("button", { name: "Accepted" }).click();
+
+    await expect(column(page, "Offer")).toContainText("Nothing in this stage.");
+    await expect(moveAnnouncement(page)).toContainText("closed out as Accepted");
+  });
+
+  test("never announces a count it does not have", async ({ page }) => {
+    // The API returns no totals, so a truncated column says what it is showing
+    // for the same reason its header does.
+    await signInWith(page, [
+      { stage: "Screening", role: "Frontend Engineer" },
+      ...manyIn("Interview", 101),
+    ]);
+
+    await liftCardWithKeyboard(page, "Frontend Engineer");
+    await page.keyboard.press("ArrowRight");
+
+    await expect(dragAnnouncement(page)).toContainText("showing 100");
+    await expect(dragAnnouncement(page)).not.toContainText("100 applications");
   });
 });
 

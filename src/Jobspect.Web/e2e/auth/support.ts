@@ -254,6 +254,63 @@ export async function dragCardToCloseOut(page: Page, role: string): Promise<Loca
 }
 
 /**
+ * What dnd-kit is saying about the drag.
+ *
+ * Read by the element id the Accessibility plugin is configured with, because the
+ * board has a second `role="status"` of its own for what a move did and a query
+ * by role matches both.
+ */
+export function dragAnnouncement(page: Page): Locator {
+  return page.locator("#dnd-kit-announcement-board");
+}
+
+/** What the board says the last move actually did. */
+export function moveAnnouncement(page: Page): Locator {
+  return page.locator("#board-outcome");
+}
+
+/**
+ * Picks a card up with the keyboard, the way the instructions say to.
+ *
+ * The grip is focused directly rather than tabbed to: how many stops away it is
+ * depends on how many cards sit above it, which is a fact about the fixture
+ * rather than about the keyboard path.
+ *
+ * Retried for the reason `openTransitionMenu` is - the sensor binds its keydown
+ * listener when the component hydrates, and a press that lands before that is
+ * simply lost. It shows up as a card that never lifted, and it shows up more on
+ * the specs with large fixtures, because those take longer to hydrate.
+ *
+ * The retry checks `aria-pressed` before pressing rather than pressing blindly:
+ * space both lifts and drops, so a second press on a drag that did start would
+ * put the card down again.
+ */
+export async function liftCardWithKeyboard(page: Page, role: string): Promise<void> {
+  const handle = page.getByRole("button", { name: `Move ${role}` });
+
+  // dnd-kit builds its live region and stamps the grip's drag state in one
+  // scheduled batch, and a lift dispatched before that batch has run is never
+  // announced at all: the listener finds no text node to write into and gives up,
+  // and dragstart happens once. Both of these wait for that batch - the region to
+  // exist, and the attribute to have been written even once.
+  await expect(dragAnnouncement(page)).toBeAttached();
+  await expect(handle).toHaveAttribute("aria-pressed", "false");
+
+  await expect(async () => {
+    if ((await handle.getAttribute("aria-pressed")) !== "true") {
+      await handle.focus();
+      await page.keyboard.press("Space");
+    }
+
+    await expect(handle).toHaveAttribute("aria-pressed", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+
+  // The lift has to have been announced before a direction key means anything,
+  // and the close-out zone only mounts on the render that follows.
+  await expect(dragAnnouncement(page)).toContainText("Picked up");
+}
+
+/**
  * Seeds an account straight into the fake API, bypassing the register form.
  *
  * The zone is worth naming when a spec asserts how an instant reads: the form

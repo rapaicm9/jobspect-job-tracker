@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import {
   anEmail,
   dragCardToCloseOut,
+  liftCardWithKeyboard,
   openPalette,
   openTransitionMenu,
   registerThroughTheForm,
@@ -65,6 +66,27 @@ for (const colorScheme of ["light", "dark"] as const) {
       expect(
         violations.map((v) => `${v.id} (${v.nodes.length}): ${v.help}`),
         "axe found violations with the palette open",
+      ).toEqual([]);
+    });
+
+    test("the board has none with a card lifted", async ({ page }) => {
+      // A lifted card carries aria-pressed, aria-grabbed and aria-roledescription
+      // that only exist while a drag is live, and the close-out zone only exists
+      // then at all - so a sweep of the board at rest judges none of it.
+      const email = anEmail();
+      await registerThroughTheForm(page, email);
+      await seedApplications(email, [
+        { stage: "Applied", role: "Frontend Engineer", companyName: "Acme" },
+      ]);
+      await page.goto("/board");
+
+      await liftCardWithKeyboard(page, "Frontend Engineer");
+
+      const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
+
+      expect(
+        violations.map((v) => `${v.id} (${v.nodes.length}): ${v.help}`),
+        "axe found violations with a card lifted",
       ).toEqual([]);
     });
 

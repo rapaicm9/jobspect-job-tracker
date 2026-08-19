@@ -13,9 +13,14 @@
 // in its original column, so every drop resolves to the column the card started
 // in - or, once the accept rules are on, to nothing at all.
 
-import { StyleInjector } from "@dnd-kit/dom";
-import { DragDropProvider } from "@dnd-kit/react";
-import { useOptimistic, useRef, useState, useTransition } from "react";
+import { Accessibility, KeyboardSensor, StyleInjector } from "@dnd-kit/dom";
+import {
+  DragDropProvider,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/react";
+import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 
 import { ACTIVE_STAGES, type ActiveStage, type TerminalStage } from "@/lib/enums";
 import { keyForIntent, type Intent } from "@/lib/idempotency";
@@ -23,9 +28,17 @@ import { Alert, AlertDescription } from "@/ui/alert";
 
 import { closeCard } from "../actions/close-card";
 import { moveCard } from "../actions/move-card";
+import {
+  announceDragEnd,
+  announceDragOver,
+  announceDragStart,
+  BOARD_INSTRUCTIONS,
+  describeCard,
+} from "../announcements";
+import { boardKeyboardSensor } from "../board-keyboard-sensor";
 import type { Board } from "../board";
 import { applyOptimisticMove, CLOSE_OUT_TARGET, findCard, type OptimisticMove } from "../drag";
-import { problemFor, type MoveOutcome } from "../move";
+import { problemFor, successFor, type MoveOutcome } from "../move";
 
 import { BoardColumns } from "./board-columns";
 import { CloseOutDialog, type ClosingCard } from "./close-out-dialog";
@@ -55,11 +68,61 @@ export function BoardDrag({ board, campaignId, nonce }: BoardDragProps) {
   const [problem, setProblem] = useState<string | null>(null);
   const [, startMoving] = useTransition();
 
+  /** What the last move did, for the status region. Nothing on screen says it. */
+  const [outcome, setOutcome] = useState<string | null>(null);
+
   /** Set by a drop on the close-out zone, cleared by picking or dismissing. */
   const [closing, setClosing] = useState<ClosingCard | null>(null);
 
   // Where the picker sends focus when it closes. See `CloseOutDialog`.
   const boardRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * The board as the announcements read it.
+   *
+   * A ref rather than a closure, and that is a constraint rather than a
+   * preference. The Accessibility plugin reads its `announcements` object once,
+   * in its constructor, and the plugin registry keys instances by constructor -
+   * so re-registering with a fresh object only assigns an `options` property
+   * nothing reads again. A closure over the board would be frozen at first mount
+   * and would describe columns from before any drag.
+   */
+  const latest = useRef(board);
+  useEffect(() => {
+    latest.current = board;
+  }, [board]);
+
+  /**
+   * dnd-kit's three lifecycle announcements, in the board's own words.
+   *
+   * Built once, for the reason above: the plugin keeps the object it was
+   * constructed with. `undefined` rather than null is what the plugin reads as
+   * "say nothing".
+   */
+  const [announcements] = useState(() => ({
+    dragstart({ operation: { source } }: DragStartEvent) {
+      const from = String(source?.type ?? "");
+      if (source == null || !isActiveStage(from)) return;
+
+      return announceDragStart(latest.current, String(source.id), from) ?? undefined;
+    },
+
+    dragover({ operation: { source, target } }: DragOverEvent) {
+      if (source == null) return;
+
+      const targetId = target == null ? null : String(target.id);
+
+      return announceDragOver(latest.current, String(source.id), targetId) ?? undefined;
+    },
+
+    dragend({ operation: { source, target }, canceled }: DragEndEvent) {
+      if (source == null) return;
+
+      const targetId = target == null ? null : String(target.id);
+
+      return announceDragEnd(latest.current, String(source.id), targetId, canceled) ?? undefined;
+    },
+  }));
 
   /**
    * The move as it looks before the server has answered.
@@ -96,7 +159,12 @@ export function BoardDrag({ board, campaignId, nonce }: BoardDragProps) {
     intent.current = keyForIntent(intent.current, `${change.cardId}:${change.to}`);
     const { key } = intent.current;
 
+    // Read before the write, because a success takes the card out of the columns
+    // this looks in - and the sentence needs to name it.
+    const card = findCard(columns, change.cardId);
+
     setProblem(null);
+    setOutcome(null);
 
     startMoving(async () => {
       applyMove(change);
@@ -108,6 +176,12 @@ export function BoardDrag({ board, campaignId, nonce }: BoardDragProps) {
       if (result.kind === "moved") intent.current = null;
 
       setProblem(problemFor(result));
+
+      // Only a success. A refusal renders the visible alert, which announces
+      // itself, and saying it twice is worse than saying it once.
+      if (result.kind === "moved" && card !== undefined) {
+        setOutcome(successFor(describeCard(card), change.to));
+      }
     });
   };
 
@@ -124,13 +198,33 @@ export function BoardDrag({ board, campaignId, nonce }: BoardDragProps) {
 
   return (
     <DragDropProvider
-      // Every default kept, with the one plugin that writes a stylesheet swapped
-      // for a copy that nonces it. Replacing the array outright would drop the
-      // keyboard sensor's accessibility plugin and the auto-scroller with it.
+      // Every default kept, with two swapped for configured copies: the plugin
+      // that writes a stylesheet, so it carries the nonce, and the one that
+      // speaks, so it speaks about applications rather than about draggable
+      // items. Replacing the array outright would drop the auto-scroller and the
+      // rest of the accessibility wiring with them.
       plugins={(defaults) => [
-        ...defaults.filter((plugin) => plugin !== StyleInjector),
+        ...defaults.filter((plugin) => plugin !== StyleInjector && plugin !== Accessibility),
         StyleInjector.configure({ nonce }),
+        Accessibility.configure({
+          // Fixes the live region's element id at `dnd-kit-announcement-board`,
+          // which is how a test reads it rather than guessing between this
+          // region and the outcome one below.
+          id: "board",
+          announcements,
+          screenReaderInstructions: { draggable: BOARD_INSTRUCTIONS },
+        }),
       ]}
+      // The stock keyboard sensor moves by pixels. See `board-keyboard-sensor.ts`.
+      sensors={(defaults) => [
+        ...defaults.filter((sensor) => sensor !== KeyboardSensor),
+        boardKeyboardSensor,
+      ]}
+      onDragStart={() => {
+        // Cleared as the next drag begins rather than when the last one ended, so
+        // the sentence stays readable for as long as the screen is still.
+        setOutcome(null);
+      }}
       onDragEnd={(event) => {
         const { source, target } = event.operation;
 
@@ -175,12 +269,23 @@ export function BoardDrag({ board, campaignId, nonce }: BoardDragProps) {
     >
       {/* Focusable only programmatically, as the picker's landing place. */}
       <div ref={boardRef} tabIndex={-1} className="flex flex-col gap-4 outline-none">
+        {/* What the move did, for anyone who cannot see that the card is now in
+            another column. Successes only: a refusal renders the alert below,
+            which is assertive and announces itself, and one outcome said twice is
+            worse than said once. Always mounted, because a live region added to
+            the page at the moment it has something to say is a live region a
+            screen reader has not been watching. */}
+        <p id="board-outcome" role="status" className="sr-only">
+          {outcome}
+        </p>
+
         {problem !== null && (
           // One region rather than one per card: by the time this renders the
           // card is back in the column it came from, which may be scrolled out of
-          // view. `role="alert"` is what announces the refusal - the successful
-          // outcomes join it in the commit that owns announcements.
-          <Alert variant="destructive" role="alert">
+          // view. The primitive carries `role="alert"`, which is what announces a
+          // refusal - successes go to the status region above instead, since a
+          // banner over the columns on every drag is noise.
+          <Alert variant="destructive">
             <AlertDescription>{problem}</AlertDescription>
           </Alert>
         )}

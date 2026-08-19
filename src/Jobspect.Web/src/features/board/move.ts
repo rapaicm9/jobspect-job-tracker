@@ -1,3 +1,5 @@
+import { isTerminalStage, type Stage } from "@/lib/enums";
+
 /**
  * What a drag can answer.
  *
@@ -24,6 +26,21 @@ export type MoveOutcome =
   /** The budget is spent. Retrying now is what keeps it spent. */
   | { kind: "rate-limited"; retryAfterSeconds: number | null }
   | { kind: "failed" };
+
+/**
+ * What a move that worked is announced as.
+ *
+ * Nothing on screen changes to say a drag succeeded - the card is simply in the
+ * other column, which the eye reads and a screen reader does not. So the success
+ * has a sentence of its own, where a refusal borrows the visible alert.
+ *
+ * Closing out is worded differently on purpose: the card has left the board
+ * rather than moved along it, and "moved to Rejected" would send someone looking
+ * for a column that is not there.
+ */
+export function successFor(subject: string, to: Stage): string {
+  return isTerminalStage(to) ? `${subject} closed out as ${to}.` : `${subject} moved to ${to}.`;
+}
 
 /**
  * What to put in front of the user, or null when there is nothing to say.

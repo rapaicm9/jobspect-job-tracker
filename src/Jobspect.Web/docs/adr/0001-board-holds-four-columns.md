@@ -3,8 +3,9 @@
 - **Status:** Accepted
 - **Date:** 2026-08-08
 - **Amended:** 2026-08-20 — the closed chip counts approximately and does not move optimistically, a
-  step back is not a drop target, the unrecognised-stage column turned out to be unreachable, and
-  the close-out zone is revealed by the gesture. See _Revision history_.
+  step back is not a drop target, the unrecognised-stage column turned out to be unreachable, the
+  close-out zone is revealed by the gesture, and the target model is traversed by target rather than
+  by distance. See _Revision history_.
 
 ## Context
 
@@ -58,6 +59,12 @@ Three arguments fix this, in order of weight:
 - The board route renders four columns; the drag-and-drop target model has four ordered targets
   plus one close-out zone, and the zone's drop handler opens a picker rather than committing a
   transition.
+- **That model is traversed by target, not by distance.** Arrow keys move a lifted card to the next
+  legal target rather than nudging it a fixed number of pixels, which is what the drag library
+  provides. Five targets and a strictly forward pipeline make the number of presses small and the
+  set of destinations exact; a pixel offset would make crossing the board a matter of dozens of
+  presses and would have to guess at a layout that is a flex row on small screens and a grid on
+  large ones.
 - **The closed chip is not corrected optimistically.** A close-out takes the card out of its column
   immediately and leaves the chip reporting its old number until the write's own re-render lands.
   Covering that window would mean putting the chip inside the optimistic subtree, which is a change
@@ -121,6 +128,11 @@ Three arguments fix this, in order of weight:
   gesture would mean deliberately inviting a refusal the transition menu pointedly does not offer.
   Recorded here because the two are one decision about where the client's model of the state machine
   is allowed to act.
+- **2026-08-20 — the target model is traversed by target.** Building the keyboard path turned up
+  that the drag library moves a lifted item by a pixel offset rather than between drop targets, so
+  "four ordered targets plus a close-out zone" said nothing about how anyone without a pointer gets
+  from one to the next. Recorded under _Consequences_ because a reader would otherwise assume the
+  library supplies it, which is the assumption that cost this a rewrite.
 - **2026-08-20 — the close-out zone, as built.** The original named a drop zone that opens an
   outcome picker and left three things open that building it settled. The zone is **revealed by the
   gesture** rather than standing permanently: closing happens once per application, and a strip

@@ -1,9 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { problemFor, type MoveOutcome } from "@/features/board/move";
+import { problemFor, successFor, type MoveOutcome } from "@/features/board/move";
 
 // Two gestures answer with this union now, so the sentences are held here rather
 // than reached through a rendered board and a drag.
+
+describe("successFor", () => {
+  it("says a move along the pipeline as a move", () => {
+    expect(successFor("Frontend Engineer at Acme", "Interview")).toBe(
+      "Frontend Engineer at Acme moved to Interview.",
+    );
+  });
+
+  it("says a close-out as a close-out", () => {
+    // "Moved to Rejected" would send a listener looking for a column that is not
+    // on this board. The card left it rather than moving along it.
+    expect(successFor("Frontend Engineer", "Rejected")).toBe(
+      "Frontend Engineer closed out as Rejected.",
+    );
+  });
+});
 
 describe("problemFor", () => {
   it("says nothing at all about a move that landed", () => {
