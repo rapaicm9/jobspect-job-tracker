@@ -1,3 +1,5 @@
+export { advanceApplication } from "./actions/advance-application";
+export { closeApplication } from "./actions/close-application";
 export { type ApplicationDetail } from "./application-detail";
 export { ActivityTimeline } from "./components/activity-timeline";
 export { AddApplicationButton } from "./components/add-application-button";
@@ -25,6 +27,7 @@ export { listActivity } from "./queries/list-activity";
 export {
   listApplications,
   listFirstPage,
+  MAX_PAGE_SIZE,
   PAGE_SIZE,
   type ApplicationPage,
 } from "./queries/list-applications";

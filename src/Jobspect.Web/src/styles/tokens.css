@@ -250,6 +250,25 @@
   }
 }
 
+/* View transitions are document-root pseudo-elements, so they are styled here
+   beside the durations rather than by whichever component caused one. Reading
+   the token is what gives them reduced motion for free: it is already 1ms in
+   the media query above, so a move becomes instant without this file growing a
+   second answer to the same question. */
+::view-transition-group(*) {
+  animation-duration: var(--duration-base);
+  animation-timing-function: var(--ease-out);
+}
+
+/* Everything not carrying a name of its own is snapshotted together as `root`
+   and cross-faded, which on this board means the whole page dissolving each
+   time a card moves two columns over. The cards are named and are the only
+   thing that actually moves, so the page itself is told to hold still. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
 /* ---------------------------------------------------------------- layer 3 */
 
 /* Component overrides live here — the few that survive review, each with the

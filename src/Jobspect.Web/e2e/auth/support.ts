@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { expect, type BrowserContext, type Page } from "@playwright/test";
+import { expect, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import Redis from "ioredis";
 
 import { FAKE_API_ORIGIN, REDIS_PORT } from "../stack/ports";
@@ -174,6 +174,143 @@ export async function openTransitionMenu(page: Page) {
 }
 
 /**
+ * The board's close-out zone, which only exists while a card is in hand.
+ *
+ * Matched on the half of the label that is unique: the picker it opens is titled
+ * "Close out {role}", so the first two words are not enough to tell them apart.
+ */
+export function closeOutZone(page: Page): Locator {
+  return page.getByText("drop to record an outcome");
+}
+
+/**
+ * Presses a card's grip and starts the drag, leaving the pointer just off it.
+ *
+ * Real pointer events rather than Playwright's `dragTo`, which dispatches the
+ * HTML5 drag-and-drop events that dnd-kit's PointerSensor does not listen for -
+ * that call succeeds and moves nothing, which is the worst shape a test failure
+ * can take.
+ *
+ * Split out from the drag because the close-out zone does not exist until the
+ * drag is live: a spec has to lift the card before it can find its target. No
+ * pause after the press either - the sensor's default constraints return none at
+ * all for a mouse whose press landed on the drag handle, so one small move is
+ * enough to make the drag live.
+ */
+export async function liftCard(page: Page, role: string): Promise<void> {
+  const handle = page.getByRole("button", { name: `Move ${role}` });
+  await handle.scrollIntoViewIfNeeded();
+
+  const from = await handle.boundingBox();
+  expect(from, "the card's drag handle is on screen").not.toBeNull();
+
+  await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2 + 4);
+}
+
+/**
+ * Finishes a lift over a target and releases.
+ *
+ * The intermediate steps are what give collision detection something to run
+ * against; a single jump can land the pointer on the target without ever having
+ * been detected over it. The second move is so the drop happens on a pointer
+ * position the collision pass has already seen rather than on the one that
+ * arrived with it.
+ */
+export async function dropOnTarget(target: Locator, name: string): Promise<void> {
+  const page = target.page();
+  const to = await target.boundingBox();
+  expect(to, `${name} is on screen`).not.toBeNull();
+
+  await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height / 2, { steps: 16 });
+  await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height / 2 + 8, { steps: 4 });
+  await page.mouse.up();
+}
+
+/** Drags a card by its grip and drops it on a column. */
+export async function dragCardTo(page: Page, role: string, stage: string): Promise<void> {
+  await liftCard(page, role);
+  await dropOnTarget(page.getByRole("region", { name: stage }), `the ${stage} column`);
+}
+
+/**
+ * Drags a card onto the close-out zone and waits for the picker it opens.
+ *
+ * The zone is looked up after the lift rather than before it, which is the whole
+ * shape of this helper: it is not on the board at rest.
+ */
+export async function dragCardToCloseOut(page: Page, role: string): Promise<Locator> {
+  await liftCard(page, role);
+
+  const zone = closeOutZone(page);
+  await expect(zone).toBeVisible();
+  await dropOnTarget(zone, "the close-out zone");
+
+  const picker = page.getByRole("dialog");
+  await expect(picker).toBeVisible();
+
+  return picker;
+}
+
+/**
+ * What dnd-kit is saying about the drag.
+ *
+ * Read by the element id the Accessibility plugin is configured with, because the
+ * board has a second `role="status"` of its own for what a move did and a query
+ * by role matches both.
+ */
+export function dragAnnouncement(page: Page): Locator {
+  return page.locator("#dnd-kit-announcement-board");
+}
+
+/** What the board says the last move actually did. */
+export function moveAnnouncement(page: Page): Locator {
+  return page.locator("#board-outcome");
+}
+
+/**
+ * Picks a card up with the keyboard, the way the instructions say to.
+ *
+ * The grip is focused directly rather than tabbed to: how many stops away it is
+ * depends on how many cards sit above it, which is a fact about the fixture
+ * rather than about the keyboard path.
+ *
+ * Retried for the reason `openTransitionMenu` is - the sensor binds its keydown
+ * listener when the component hydrates, and a press that lands before that is
+ * simply lost. It shows up as a card that never lifted, and it shows up more on
+ * the specs with large fixtures, because those take longer to hydrate.
+ *
+ * The retry checks `aria-pressed` before pressing rather than pressing blindly:
+ * space both lifts and drops, so a second press on a drag that did start would
+ * put the card down again.
+ */
+export async function liftCardWithKeyboard(page: Page, role: string): Promise<void> {
+  const handle = page.getByRole("button", { name: `Move ${role}` });
+
+  // dnd-kit builds its live region and stamps the grip's drag state in one
+  // scheduled batch, and a lift dispatched before that batch has run is never
+  // announced at all: the listener finds no text node to write into and gives up,
+  // and dragstart happens once. Both of these wait for that batch - the region to
+  // exist, and the attribute to have been written even once.
+  await expect(dragAnnouncement(page)).toBeAttached();
+  await expect(handle).toHaveAttribute("aria-pressed", "false");
+
+  await expect(async () => {
+    if ((await handle.getAttribute("aria-pressed")) !== "true") {
+      await handle.focus();
+      await page.keyboard.press("Space");
+    }
+
+    await expect(handle).toHaveAttribute("aria-pressed", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+
+  // The lift has to have been announced before a direction key means anything,
+  // and the close-out zone only mounts on the render that follows.
+  await expect(dragAnnouncement(page)).toContainText("Picked up");
+}
+
+/**
  * Seeds an account straight into the fake API, bypassing the register form.
  *
  * The zone is worth naming when a spec asserts how an instant reads: the form
@@ -254,6 +391,24 @@ export async function failCalls(email: string, calls: string[]): Promise<void> {
   });
 
   expect(response.status, "the fake API armed the failing call").toBe(204);
+}
+
+/**
+ * Fails the list read for the named stages, and only those.
+ *
+ * `failCalls` names an endpoint, which cannot separate two reads of the same one.
+ * The board makes five and degrades each on its own, so the assertion worth
+ * having - one broken column, three still standing - needs a seam that refuses
+ * exactly one of them.
+ */
+export async function failStageReads(email: string, stages: string[]): Promise<void> {
+  const response = await fetch(`${FAKE_API_ORIGIN}/__test/fail-stage-reads`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, stages }),
+  });
+
+  expect(response.status, "the fake API armed the failing stage read").toBe(204);
 }
 
 /**

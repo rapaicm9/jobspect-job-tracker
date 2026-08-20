@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatInAccountZone, fromZonedInput, toZonedInput } from "@/lib/instants";
+import { formatInAccountZone, fromZonedInput, todayInZone, toZonedInput } from "@/lib/instants";
 
 describe("formatInAccountZone", () => {
   it("renders an instant in the zone it is given", () => {
@@ -129,5 +129,38 @@ describe("fromZonedInput", () => {
     expect(fromZonedInput("2026-08-20T09:00:00Z", "UTC")).toBeNull();
     expect(fromZonedInput("20/08/2026 09:00", "UTC")).toBeNull();
     expect(fromZonedInput("", "UTC")).toBeNull();
+  });
+});
+
+describe("todayInZone", () => {
+  it("reads the calendar day the account is having, not UTC's", () => {
+    // The reason this exists. At 22:30 UTC it is already tomorrow in Sydney and
+    // still today in Los Angeles, so a deadline "due today" is a different
+    // deadline for each of them - and the account states which one it is.
+    const instant = Date.parse("2026-08-11T22:30:00Z");
+
+    expect(todayInZone("UTC", instant)).toBe("2026-08-11");
+    expect(todayInZone("Australia/Sydney", instant)).toBe("2026-08-12");
+    expect(todayInZone("America/Los_Angeles", instant)).toBe("2026-08-11");
+  });
+
+  it("crosses back over midnight as well", () => {
+    const instant = Date.parse("2026-08-11T02:30:00Z");
+
+    expect(todayInZone("UTC", instant)).toBe("2026-08-11");
+    expect(todayInZone("America/New_York", instant)).toBe("2026-08-10");
+  });
+
+  it("pads a single-digit month and day", () => {
+    // The value is compared as a string by `daysUntil`, so "2026-8-1" would parse
+    // as nothing at all and every deadline would quietly lose its chip.
+    expect(todayInZone("UTC", Date.parse("2026-01-02T12:00:00Z"))).toBe("2026-01-02");
+  });
+
+  it("falls back to UTC for a zone this runtime has no data for", () => {
+    const instant = Date.parse("2026-08-11T22:30:00Z");
+
+    expect(todayInZone("Mars/Olympus", instant)).toBe("2026-08-11");
+    expect(todayInZone(null, instant)).toBe("2026-08-11");
   });
 });

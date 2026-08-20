@@ -8,9 +8,8 @@
 // asks for, since a closed-over value is encrypted with the action id and a
 // bound one is not.
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 
 import { keyForIntent, type Intent } from "@/lib/idempotency";
@@ -29,7 +28,7 @@ import {
 
 import { advanceApplication } from "../actions/advance-application";
 import { closeApplication } from "../actions/close-application";
-import { activityQueryKey } from "../activity-reading";
+import { activityQueryKey, type TimelinePage } from "../activity-reading";
 import type { TransitionResult } from "../request-transition";
 
 import { StageChip } from "./stage-chip";
@@ -42,8 +41,8 @@ export interface TransitionMenuProps {
 }
 
 export function TransitionMenu({ applicationId, advanceTo, closeAs }: TransitionMenuProps) {
-  const router = useRouter();
   const queryClient = useQueryClient();
+  const queryKey = activityQueryKey(applicationId);
 
   const [problem, setProblem] = useState<string | null>(null);
   const [isMoving, startMoving] = useTransition();
@@ -66,14 +65,27 @@ export function TransitionMenu({ applicationId, advanceTo, closeAs }: Transition
       switch (result.kind) {
         case "moved":
           intent.current = null;
-          // Two halves of one screen: the chip, the facts and the header are
-          // server-rendered, and the timeline is a client cache that has just
-          // gained a stage-change entry it cannot know about.
-          router.refresh();
-          // Awaited on purpose. A refetch left in flight is one the next render
-          // can drop, and the move is not finished being shown until the history
-          // shows it - so the control stays busy until both halves agree.
-          await queryClient.refetchQueries({ queryKey: activityQueryKey(applicationId) });
+
+          if (result.timeline === null) {
+            // The move landed and its history did not come back with it. Nothing
+            // is asked of the server here, and that is the point: a second
+            // request issued now races the re-rendered page this response is
+            // still delivering, which is the failure this whole change removes.
+            // The panel sits one entry behind until the screen is read again, and
+            // the move itself still shows in the half that is server-rendered.
+            return;
+          }
+
+          // The walk restarts at the server's fresh first page rather than having
+          // the new entry spliced into the one already loaded. Under keyset paging
+          // a new head shifts every boundary, so replacing page one alone would
+          // drop whatever used to sit at its tail. The timeline is newest-first,
+          // so the move is at the top either way, and anything further down is a
+          // "Load more" away.
+          queryClient.setQueryData<InfiniteData<TimelinePage, string | null>>(queryKey, {
+            pages: [result.timeline],
+            pageParams: [null],
+          });
           return;
 
         case "illegal":
@@ -89,6 +101,16 @@ export function TransitionMenu({ applicationId, advanceTo, closeAs }: Transition
 
         case "in-flight":
           setProblem("This move is still being applied. Give it a moment.");
+          return;
+
+        case "rate-limited":
+          // The one refusal where "try again" is the wrong advice, so it says how
+          // long instead whenever the API named a figure.
+          setProblem(
+            result.retryAfterSeconds === null
+              ? "Too many requests just now. Wait a moment before moving it again."
+              : `Too many requests just now. Try again in ${String(result.retryAfterSeconds)} seconds.`,
+          );
           return;
 
         case "failed":
