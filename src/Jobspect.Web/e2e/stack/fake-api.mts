@@ -94,9 +94,9 @@ function transitionKindOf(from: StageName, to: StageName): TransitionKind | null
   const fromActive = PIPELINE.includes(from);
   const toActive = PIPELINE.includes(to);
 
-  // Active to active: forward only, skips allowed.
+  // Active to active: either direction, skips allowed both ways.
   if (fromActive && toActive) {
-    return PIPELINE.indexOf(to) > PIPELINE.indexOf(from) ? "Advance" : null;
+    return PIPELINE.indexOf(to) > PIPELINE.indexOf(from) ? "Advance" : "StepBack";
   }
 
   // Active to terminal: Accepted needs an offer, the rest reach from anywhere.

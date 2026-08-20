@@ -127,7 +127,7 @@ export function TransitionMenu({ applicationId, advanceTo, closeAs }: Transition
         <DropdownMenuTrigger
           render={
             <Button type="button" variant="outline" size="sm" disabled={isMoving || !hasMoves}>
-              {isMoving ? "Moving…" : "Move"}
+              {isMoving ? "Updating…" : "Status"}
               <ChevronDown aria-hidden="true" className="size-4" />
             </Button>
           }
@@ -136,6 +136,10 @@ export function TransitionMenu({ applicationId, advanceTo, closeAs }: Transition
         <DropdownMenuContent align="end">
           {advanceTo.length > 0 && (
             <DropdownMenuGroup>
+              {/* Direction-neutral on purpose. This group holds every active
+                  stage the pipeline allows, which is an advance, a step back or
+                  a reopen depending on where the application is - so a heading
+                  naming any one of them would be wrong above the other two. */}
               <DropdownMenuLabel>Move to</DropdownMenuLabel>
               {advanceTo.map((stage) => (
                 <DropdownMenuItem

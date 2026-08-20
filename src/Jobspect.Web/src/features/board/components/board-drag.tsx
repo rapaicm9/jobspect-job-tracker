@@ -42,7 +42,6 @@ import { problemFor, successFor, type MoveOutcome } from "../move";
 
 import { BoardColumns } from "./board-columns";
 import { CloseOutDialog, type ClosingCard } from "./close-out-dialog";
-import { CloseOutZone } from "./close-out-zone";
 
 export interface BoardDragProps {
   board: Board;
@@ -290,9 +289,8 @@ export function BoardDrag({ board, campaignId, nonce }: BoardDragProps) {
           </Alert>
         )}
 
+        {/* The close-out rail is inside this, in a track of its own after Offer. */}
         <BoardColumns columns={columns} campaignId={campaignId} />
-
-        <CloseOutZone />
       </div>
 
       <CloseOutDialog

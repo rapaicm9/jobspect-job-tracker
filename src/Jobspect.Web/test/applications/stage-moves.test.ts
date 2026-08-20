@@ -15,9 +15,10 @@ function isLegal(from: Stage, to: Stage): boolean {
   if (from === to) return false;
 
   const active = (stage: Stage) => (ACTIVE_STAGES as readonly string[]).includes(stage);
-  const position = (stage: Stage) => (ACTIVE_STAGES as readonly string[]).indexOf(stage);
 
-  if (active(from) && active(to)) return position(to) > position(from);
+  // Either direction between two active stages: later advances, earlier steps
+  // back. Only the same-stage case above is refused.
+  if (active(from) && active(to)) return true;
   if (active(from)) return to !== "Accepted" || from === "Offer";
   if (active(to)) return true;
 
@@ -48,10 +49,13 @@ describe("legalMoves", () => {
     }
   });
 
-  it("allows a skip forward but never a step back", () => {
+  it("allows a skip forward and a step back of any distance", () => {
+    // Both directions, and neither restricted to the adjacent stage: a move made
+    // in error is corrected by naming where it should have gone, not by walking
+    // the pipeline backwards one stage at a time.
     expect(legalMoves("Applied").advanceTo).toEqual(["Screening", "Interview", "Offer"]);
-    expect(legalMoves("Interview").advanceTo).toEqual(["Offer"]);
-    expect(legalMoves("Offer").advanceTo).toEqual([]);
+    expect(legalMoves("Interview").advanceTo).toEqual(["Applied", "Screening", "Offer"]);
+    expect(legalMoves("Offer").advanceTo).toEqual(["Applied", "Screening", "Interview"]);
   });
 
   it("offers Accepted from Offer and from nowhere else", () => {

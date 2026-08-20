@@ -16,7 +16,7 @@ import { ACTIVE_STAGES, TERMINAL_STAGES, type Stage, type UnknownStage } from "@
  * and hands the menu the answers.
  */
 export interface LegalMoves {
-  /** Active destinations: a step forward, or a reopen out of a terminal stage. */
+  /** Active destinations: a move along the pipeline in either direction, or a reopen out of a terminal stage. */
   advanceTo: Stage[];
   /** Terminal destinations: closing an active application, or reclassifying a closed one. */
   closeAs: Stage[];
@@ -25,7 +25,8 @@ export interface LegalMoves {
 /**
  * The rules, stated once:
  *
- * - active to a strictly later active stage, skips allowed;
+ * - active to any other active stage - later advances and skips are allowed,
+ *   earlier steps back, because a move made in error has to be undoable;
  * - active to Rejected, Withdrawn or Ghosted from anywhere;
  * - Accepted from Offer only, and so never out of a terminal stage;
  * - terminal to any active stage, which reopens it;
@@ -38,7 +39,7 @@ export function legalMoves(from: Stage | UnknownStage): LegalMoves {
 
   if (position >= 0) {
     return {
-      advanceTo: ACTIVE_STAGES.slice(position + 1),
+      advanceTo: ACTIVE_STAGES.filter((stage) => stage !== from),
       // Accepted is the exception in both directions: it is the one outcome that
       // has to be earned, so only an application holding an offer can reach it.
       closeAs: TERMINAL_STAGES.filter((stage) => stage !== "Accepted" || from === "Offer"),

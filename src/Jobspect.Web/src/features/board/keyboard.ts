@@ -34,17 +34,17 @@ export interface TargetRect {
  * is the very first key press. A lifted card sits at whatever height it had in its
  * column, so from a card near the top of Applied the Offer column's centre is far
  * enough below that any angular test rejects it and the first press finds nothing
- * at all. The columns are full height and cover every `y` a card can occupy, and
- * the close-out zone is full width below all of them - so the two axes separate
- * the two kinds of target without this rule having to name either.
+ * at all. Every target is full height and covers every `y` a card can occupy, so
+ * spanning admits all of them sideways and none of them vertically.
  *
- * Vertical travel has one concession the horizontal has not: when nothing spans
- * the current `x`, it falls back to whatever is nearest horizontally. The gap
- * between two columns is a real place for a point to be - the close-out zone's
- * own centre lands in one on a four-column board - and an arrow key that does
- * nothing because of a sixteen-pixel gutter is an arrow key that looks broken.
- * Sideways has no fallback on purpose, since a column always spans a card's
- * height and a fallback there would start offering the close-out zone sideways.
+ * Which is to say the board is traversed on **one axis**. The four columns and the
+ * close-out rail sit in a single row, so up and down reach nothing and are inert -
+ * honestly so, since there is nothing above or below a lifted card to reach. There
+ * is deliberately no fallback for a direction that finds nothing spanning: one
+ * existed while the close-out zone ran full width beneath the columns, and it has
+ * to go with that layout. Kept, it would make a downward press from a card near
+ * the top of a column fall through to the nearest target below - which, on a
+ * single row, is another column sideways.
  *
  * Ties break on the other axis and then on id, so the answer never depends on the
  * order the targets were registered in.
@@ -69,13 +69,11 @@ export function nextTargetInDirection(
     }
   });
 
-  const spanning = ahead.filter((candidate) =>
+  const reachable = ahead.filter((candidate) =>
     horizontal
       ? candidate.top <= from.y && from.y <= candidate.bottom
       : candidate.left <= from.x && from.x <= candidate.right,
   );
-
-  const reachable = spanning.length > 0 || horizontal ? spanning : ahead;
 
   const travel = (candidate: TargetRect) =>
     horizontal ? Math.abs(candidate.centre.x - from.x) : Math.abs(candidate.centre.y - from.y);

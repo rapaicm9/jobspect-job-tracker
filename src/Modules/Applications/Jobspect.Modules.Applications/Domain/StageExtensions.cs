@@ -8,7 +8,7 @@ namespace Jobspect.Modules.Applications.Domain;
 /// </summary>
 internal static class StageExtensions
 {
-    /// <summary>The live pipeline in order; a forward move must land on a later entry.</summary>
+    /// <summary>The live pipeline in order; the order is what tells an advance from a step back.</summary>
     private static readonly Stage[] Pipeline = [Stage.Applied, Stage.Screening, Stage.Interview, Stage.Offer];
 
     public static bool IsActive(this Stage stage) => Array.IndexOf(Pipeline, stage) >= 0;

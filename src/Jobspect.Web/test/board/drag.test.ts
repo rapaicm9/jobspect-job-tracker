@@ -47,12 +47,17 @@ describe("stagesAcceptedBy", () => {
     expect(stagesAcceptedBy("Offer")).toContain("Applied");
   });
 
-  it("refuses a step back, which is not a move the pipeline has", () => {
-    expect(stagesAcceptedBy("Applied")).toEqual([]);
-    expect(stagesAcceptedBy("Screening")).not.toContain("Interview");
+  it("lets a card come back, however far it went", () => {
+    // The correction path. Applied takes a card from every later column - it used
+    // to take none at all, being the first - and a step back is not restricted to
+    // the adjacent column any more than a skip forward is.
+    expect(stagesAcceptedBy("Applied")).toEqual(["Screening", "Interview", "Offer"]);
+    expect(stagesAcceptedBy("Screening")).toContain("Offer");
   });
 
   it("never accepts a card from the column it is already in", () => {
+    // The only refusal left on this board, and it is not a pipeline rule: a move
+    // to the stage an application already occupies is not a transition at all.
     for (const stage of ACTIVE_STAGES) {
       expect(stagesAcceptedBy(stage)).not.toContain(stage);
     }

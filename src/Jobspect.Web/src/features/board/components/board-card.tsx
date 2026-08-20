@@ -48,21 +48,21 @@ export function BoardCardBody({ card, href, handle }: BoardCardBodyProps) {
               the product: one link per item, and the link text names where it
               goes. The grip beside it is what drags, so the two gestures never
               compete for the same press. */}
-          <p className="font-medium text-foreground">
+          <p className="text-sm font-medium text-foreground">
             <Link href={href} className="underline-offset-4 hover:underline">
               {card.role}
             </Link>
           </p>
 
           {card.companyName !== null && (
-            <p className="mt-0.5 text-sm text-muted-foreground">{card.companyName}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{card.companyName}</p>
           )}
         </div>
 
         {handle}
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {applied !== null && (
           <span>
             Applied <time dateTime={card.appliedDate}>{applied}</time>
@@ -115,7 +115,11 @@ export function BoardCard({ card, href, stage }: BoardCardProps) {
           pointer, so an `isDragging` treatment applies to the card in hand rather
           than to anything left behind - dimming it fades what the user is
           holding. */}
-      <li ref={ref} className="rounded-lg border border-border bg-card p-3">
+      {/* Denser than the rest of the product's cards, and deliberately: a column
+          holding a real job search runs long enough that the padding is the
+          difference between scanning it and scrolling it. The grip below keeps
+          its own floor regardless - see there. */}
+      <li ref={ref} className="rounded-lg border border-border bg-card p-2.5">
         <BoardCardBody
           card={card}
           href={href}
@@ -126,6 +130,10 @@ export function BoardCard({ card, href, stage }: BoardCardProps) {
               // The accessible name says which card, because a column of
               // identical "Move" buttons is not what a screen reader should hear.
               aria-label={`Move ${card.role}`}
+              // The card around this got smaller and this did not. `--target-min`
+              // resolves to 44px under a coarse pointer, and nothing automated
+              // checks that floor - `target-size` in axe tests 24. It is held by
+              // the manual pass alone, so it does not move with the density.
               className="-mr-1 -mt-1 inline-flex size-(--control-height-sm) min-h-(--target-min) min-w-(--target-min) shrink-0 cursor-grab items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
             >
               <GripVertical aria-hidden="true" className="size-4" />

@@ -53,6 +53,21 @@ public sealed class TransitionApplicationEndpointTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task Steps_an_application_back_to_an_earlier_stage()
+    {
+        var tokens = await fixture.RegisterWithDefaultCampaignAsync(_client, Ct);
+        var application = await CreateApplicationAsync(tokens.AccessToken);
+        await _client.TransitionApplicationAsync(tokens.AccessToken, application.Id, "Interview");
+
+        // Moved on by mistake, and put back. This answered 422 before the pipeline
+        // learned to run in both directions.
+        var back = await (await _client.TransitionApplicationAsync(
+            tokens.AccessToken, application.Id, "Applied")).ReadApplicationAsync();
+
+        back.Stage.ShouldBe("Applied");
+    }
+
+    [Fact]
     public async Task Jumps_straight_from_Applied_to_a_terminal()
     {
         var tokens = await fixture.RegisterWithDefaultCampaignAsync(_client, Ct);
