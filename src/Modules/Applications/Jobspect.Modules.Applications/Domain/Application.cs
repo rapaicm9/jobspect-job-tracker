@@ -100,12 +100,11 @@ internal sealed class Application
     /// Moves the application to <paramref name="target"/> if the state machine
     /// allows it, stamping <see cref="UpdatedAt"/> and returning the recorded
     /// <see cref="StageTransition"/> (which the caller logs and publishes). An
-    /// illegal move - a backwards or same-stage step between active stages, or
-    /// <c>Accepted</c> from anywhere but <c>Offer</c> - leaves the application
-    /// untouched and returns <see cref="ApplicationErrors.IllegalTransition"/>.
-    /// Rules:
+    /// illegal move - a same-stage step, or <c>Accepted</c> from anywhere but
+    /// <c>Offer</c> - leaves the application untouched and returns
+    /// <see cref="ApplicationErrors.IllegalTransition"/>. Rules:
     /// <list type="bullet">
-    /// <item>active → a strictly later active stage (skips allowed);</item>
+    /// <item>active → any other active stage: later advances (skips allowed), earlier steps back;</item>
     /// <item><c>Rejected</c>/<c>Withdrawn</c>/<c>Ghosted</c> from any active stage;</item>
     /// <item><c>Accepted</c> from <c>Offer</c> only - never out of a terminal stage;</item>
     /// <item>terminal → any active stage (reopening, logged);</item>
@@ -139,8 +138,12 @@ internal sealed class Application
 
         return (from.IsActive(), target.IsActive()) switch
         {
-            // Active → active: forward only, to a strictly later stage.
-            (true, true) => target.PipelineIndex() > from.PipelineIndex() ? TransitionKind.Advance : null,
+            // Active → active: either direction. Forward is the ordinary move;
+            // backward corrects one, which is common enough that refusing it left
+            // a mistake with no way out of it.
+            (true, true) => target.PipelineIndex() > from.PipelineIndex()
+                ? TransitionKind.Advance
+                : TransitionKind.StepBack,
 
             // Active → terminal: Accepted needs Offer; the rest reach from any active stage.
             (true, false) => target is not Stage.Accepted || from is Stage.Offer ? TransitionKind.Terminal : null,

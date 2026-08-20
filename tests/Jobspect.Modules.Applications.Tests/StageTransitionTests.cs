@@ -6,8 +6,8 @@ namespace Jobspect.Modules.Applications.Tests;
 
 /// <summary>
 /// The pipeline state machine, proven exhaustively. Every one of the 64 ordered
-/// (from, to) stage pairs is asserted: the 44 legal moves - each against the kind
-/// it must record - and the 20 illegal ones. The legal set is written out by hand
+/// (from, to) stage pairs is asserted: the 50 legal moves - each against the kind
+/// it must record - and the 14 illegal ones. The legal set is written out by hand
 /// below as the specification of the machine; the illegal set is its complement,
 /// so neither theory re-runs the aggregate's own logic to decide what it expects.
 ///
@@ -166,6 +166,33 @@ public sealed class StageTransitionTests
     }
 
     [Fact]
+    public void An_active_application_can_step_back_to_any_earlier_stage()
+    {
+        // The mistake case, which is the common one: a card dragged into the wrong
+        // column, or a stage picked in error. Every earlier stage is reachable, not
+        // just the one immediately behind, because the wrong move may have skipped.
+        var application = ArrangeAt(Stage.Offer);
+
+        var result = application.TransitionTo(Stage.Applied, MoveTime);
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Kind.ShouldBe(TransitionKind.StepBack);
+        application.Stage.ShouldBe(Stage.Applied);
+    }
+
+    [Fact]
+    public void A_step_back_and_the_advance_that_undoes_it_are_both_legal()
+    {
+        // Round-tripping is the point: correcting a mistake must not leave the
+        // application somewhere it cannot move on from.
+        var application = ArrangeAt(Stage.Interview);
+
+        application.TransitionTo(Stage.Screening, MoveTime).Value.Kind.ShouldBe(TransitionKind.StepBack);
+        application.TransitionTo(Stage.Interview, MoveTime).Value.Kind.ShouldBe(TransitionKind.Advance);
+        application.Stage.ShouldBe(Stage.Interview);
+    }
+
+    [Fact]
     public void A_same_stage_move_is_rejected()
     {
         var application = ArrangeAt(Stage.Screening);
@@ -221,6 +248,17 @@ public sealed class StageTransitionTests
             for (var j = i + 1; j < ActiveStages.Length; j++)
             {
                 moves[(ActiveStages[i], ActiveStages[j])] = TransitionKind.Advance;
+            }
+        }
+
+        // Step back: an active stage to any earlier active stage. The mirror of
+        // the advance above, and it is the correction path - a move made by
+        // mistake has to be undoable by the same gesture that made it.
+        for (var i = 0; i < ActiveStages.Length; i++)
+        {
+            for (var j = 0; j < i; j++)
+            {
+                moves[(ActiveStages[i], ActiveStages[j])] = TransitionKind.StepBack;
             }
         }
 

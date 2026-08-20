@@ -11,6 +11,12 @@ internal enum TransitionKind
     /// <summary>Active → a strictly later active stage.</summary>
     Advance,
 
+    /// <summary>
+    /// Active → an earlier active stage: putting an application back where it
+    /// belongs, usually because the move that took it forward was a mistake.
+    /// </summary>
+    StepBack,
+
     /// <summary>Active → a terminal outcome.</summary>
     Terminal,
 
