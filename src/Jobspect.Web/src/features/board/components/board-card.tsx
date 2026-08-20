@@ -1,9 +1,19 @@
+/// <reference types="react/canary" />
+
 "use client";
 
 // Client-owned because the card is the draggable. Still rendered on the server
 // for the first paint - the data comes from the board's own read either way.
+//
+// `ViewTransition` is an experimental-channel React API, which this application
+// is already on: Next opts the app directory into `react@experimental` whenever
+// `taint` is set, and it has been since the access token was tainted. The types
+// come from a triple-slash reference rather than an import, which must precede
+// every statement in the file - `import {} from "react/canary"` typechecks and
+// then fails Turbopack, the same wall the taint API hit.
 
 import { useDraggable } from "@dnd-kit/react";
+import { ViewTransition } from "react";
 import { GripVertical } from "lucide-react";
 import Link from "next/link";
 
@@ -89,27 +99,40 @@ export function BoardCard({ card, href, stage }: BoardCardProps) {
   const { ref, handleRef } = useDraggable({ id: card.id, type: stage });
 
   return (
-    // Nothing here changes while the card is being dragged, and that is not an
-    // omission. dnd-kit lifts this element itself and moves it under the pointer,
-    // so a `isDragging` treatment applies to the card in hand rather than to
-    // anything left behind - dimming it fades the thing the user is holding.
-    <li ref={ref} className="rounded-lg border border-border bg-card p-3">
-      <BoardCardBody
-        card={card}
-        href={href}
-        handle={
-          <button
-            ref={handleRef}
-            type="button"
-            // The accessible name says which card, because a column of identical
-            // "Move" buttons is not what a screen reader should hear.
-            aria-label={`Move ${card.role}`}
-            className="-mr-1 -mt-1 inline-flex size-(--control-height-sm) min-h-(--target-min) min-w-(--target-min) shrink-0 cursor-grab items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-          >
-            <GripVertical aria-hidden="true" className="size-4" />
-          </button>
-        }
-      />
-    </li>
+    // Named so a move between columns animates rather than jumping. Every card
+    // carries one, not just the one being moved: React pairs the element before
+    // an update with the element after it *by name*, so a name that only appears
+    // once the move has started has nothing to pair with and silently does
+    // nothing. Naming all of them also settles the cards that close the gap
+    // behind one that left.
+    //
+    // `BoardCardBody` deliberately has none. It is rendered a second time inside
+    // the drag overlay, and two elements sharing a name is the one thing a view
+    // transition cannot have.
+    <ViewTransition name={`card-${card.id}`}>
+      {/* Nothing here changes while the card is being dragged, and that is not
+          an omission. dnd-kit lifts this element itself and moves it under the
+          pointer, so an `isDragging` treatment applies to the card in hand rather
+          than to anything left behind - dimming it fades what the user is
+          holding. */}
+      <li ref={ref} className="rounded-lg border border-border bg-card p-3">
+        <BoardCardBody
+          card={card}
+          href={href}
+          handle={
+            <button
+              ref={handleRef}
+              type="button"
+              // The accessible name says which card, because a column of
+              // identical "Move" buttons is not what a screen reader should hear.
+              aria-label={`Move ${card.role}`}
+              className="-mr-1 -mt-1 inline-flex size-(--control-height-sm) min-h-(--target-min) min-w-(--target-min) shrink-0 cursor-grab items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+            >
+              <GripVertical aria-hidden="true" className="size-4" />
+            </button>
+          }
+        />
+      </li>
+    </ViewTransition>
   );
 }

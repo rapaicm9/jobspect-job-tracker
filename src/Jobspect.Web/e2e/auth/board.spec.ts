@@ -788,6 +788,139 @@ test.describe("the drag against the policy", () => {
   });
 });
 
+test.describe("the move as motion", () => {
+  const ID = "99999999-9999-4999-8999-999999999999";
+  const GROUP = `::view-transition-group(card-${ID})`;
+
+  /**
+   * Records the view transitions the browser actually ran.
+   *
+   * The DOM cannot answer this: a card that moves with no animation and a card
+   * that animates leave identical markup, which is the failure commit 3 spent a
+   * day on. `document.getAnimations()` reports the user-agent animations driving
+   * the `::view-transition-*` pseudo-elements, and those exist only if a
+   * transition really started - so this is the assertion, and everything else on
+   * this screen is already covered by the specs above.
+   *
+   * Polled on a frame rather than read once, because a transition is over in
+   * 200ms and an `await` can easily outlast it.
+   */
+  async function recordViewTransitions(page: Page): Promise<void> {
+    await page.addInitScript(() => {
+      const seen: { name: string; duration: number }[] = [];
+      (window as unknown as { __viewTransitions: typeof seen }).__viewTransitions = seen;
+
+      const poll = () => {
+        for (const animation of document.getAnimations()) {
+          const pseudo = (animation.effect as KeyframeEffect | null)?.pseudoElement ?? null;
+          if (pseudo === null || !pseudo.startsWith("::view-transition-group(")) continue;
+
+          if (!seen.some((entry) => entry.name === pseudo)) {
+            seen.push({
+              name: pseudo,
+              duration: Number(animation.effect?.getComputedTiming().duration ?? 0),
+            });
+          }
+        }
+
+        requestAnimationFrame(poll);
+      };
+
+      requestAnimationFrame(poll);
+    });
+  }
+
+  function ranTransitions(page: Page) {
+    return page.evaluate(
+      () =>
+        (window as unknown as { __viewTransitions: { name: string; duration: number }[] })
+          .__viewTransitions,
+    );
+  }
+
+  /**
+   * Waits for the card's own transition and answers with what ran.
+   *
+   * Polled rather than read once, and not for the usual reason: the assertion
+   * that the card is in the other column resolves as soon as React has committed
+   * the DOM, and the transition starts on the frame after that. Reading once at
+   * that moment finds nothing and reads as a broken feature.
+   */
+  async function transitionFor(page: Page, group: string) {
+    await expect
+      .poll(async () => (await ranTransitions(page)).map((entry) => entry.name), {
+        message: `no view transition ran for ${group}`,
+      })
+      .toContain(group);
+
+    return (await ranTransitions(page)).find((entry) => entry.name === group);
+  }
+
+  test("animates the card that moved, at the duration the tokens set", async ({ page }) => {
+    await recordViewTransitions(page);
+    await signInWith(page, [{ id: ID, stage: "Applied", role: "Frontend Engineer" }]);
+
+    await dragCardTo(page, "Frontend Engineer", "Screening");
+    await expect(column(page, "Screening")).toContainText("Frontend Engineer");
+
+    // 200ms is `--duration-base`, the token named for cards and menus. Reading it
+    // through the token is also what gives the reduced-motion case below its
+    // answer without a second mechanism.
+    expect((await transitionFor(page, GROUP))?.duration).toBe(200);
+  });
+
+  test("proves the policy does not block the name", async ({ page }) => {
+    // A view transition is driven by `view-transition-name`, which React sets as
+    // a property on the element's style object. The style *attribute* is blocked
+    // here - `style-src` is nonce-based and a nonce cannot cover an attribute -
+    // but direct property assignment is a different thing and is not. This is
+    // that distinction asserted rather than read: had it been blocked there would
+    // be no named group at all, only the unnamed root.
+    await recordViewTransitions(page);
+    await signInWith(page, [{ id: ID, stage: "Applied", role: "Frontend Engineer" }]);
+
+    await dragCardTo(page, "Frontend Engineer", "Interview");
+    await expect(column(page, "Interview")).toContainText("Frontend Engineer");
+
+    await transitionFor(page, GROUP);
+  });
+
+  test("animates the card back when the pipeline refuses", async ({ page }) => {
+    // The rollback is the half worth animating: a refusal used to be
+    // indistinguishable from a move that never started, because both left the
+    // card where it was with no motion in between.
+    const email = await signInWith(page, [{ id: ID, stage: "Applied", role: "Frontend Engineer" }]);
+    await recordViewTransitions(page);
+    await failCalls(email, ["transition-illegal"]);
+    await page.goto("/board");
+
+    await dragCardTo(page, "Frontend Engineer", "Screening");
+    await expect(refusal(page)).toContainText("cannot move from");
+    await expect(column(page, "Applied")).toContainText("Frontend Engineer");
+
+    await transitionFor(page, GROUP);
+  });
+
+  test("collapses to instant when reduced motion is asked for", async ({ page }) => {
+    // 1ms, not zero and not absent. The transition still happens, so nothing
+    // about the move changes shape - it simply takes no time, which is the answer
+    // the duration tokens already give every other animation in the product. The
+    // token is doing this, not a rule of its own: `--duration-base` is already
+    // 1ms inside the reduced-motion media query.
+    //
+    // `emulateMedia` rather than the `reducedMotion` fixture, which moved under
+    // `contextOptions` in Playwright 1.62 and cannot be set per test any more.
+    await recordViewTransitions(page);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await signInWith(page, [{ id: ID, stage: "Applied", role: "Frontend Engineer" }]);
+
+    await dragCardTo(page, "Frontend Engineer", "Screening");
+    await expect(column(page, "Screening")).toContainText("Frontend Engineer");
+
+    expect((await transitionFor(page, GROUP))?.duration).toBe(1);
+  });
+});
+
 test.describe("a move made somewhere else", () => {
   test("reaches the board when it is next opened", async ({ page }) => {
     // A behaviour worth holding whatever makes it true, rather than a test for
