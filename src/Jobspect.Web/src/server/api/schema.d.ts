@@ -930,7 +930,7 @@ export interface components {
             targetStage: null | string;
         };
         /** @enum {unknown} */
-        TransitionKind: "Advance" | "Terminal" | "Reopen" | "Reclassify";
+        TransitionKind: "Advance" | "StepBack" | "Terminal" | "Reopen" | "Reclassify";
         TrendPoint: {
             /** Format: date */
             weekStarting: string;

@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { nextTargetInDirection, type TargetRect } from "@/features/board/keyboard";
 
 // The board's real geometry, near enough: four columns of equal width side by
-// side, and a close-out zone spanning all of them below.
+// side, and the close-out rail in a narrow track after the last of them. Every
+// target is full height, which is what puts the whole board on one axis.
 
 function rect(id: string, left: number, top: number, width: number, height: number): TargetRect {
   return {
@@ -16,13 +17,17 @@ function rect(id: string, left: number, top: number, width: number, height: numb
   };
 }
 
+const APPLIED = rect("Applied", 0, 100, 280, 600);
 const SCREENING = rect("Screening", 300, 100, 280, 600);
 const INTERVIEW = rect("Interview", 600, 100, 280, 600);
 const OFFER = rect("Offer", 900, 100, 280, 600);
-const CLOSE_OUT = rect("close-out", 0, 740, 1180, 60);
+const CLOSE_OUT = rect("close-out", 1200, 100, 96, 600);
 
-/** A card dragged out of Applied: everything later accepts it, and the zone. */
+/** A card dragged out of Applied: every other column accepts it, and the rail. */
 const FROM_APPLIED = [SCREENING, INTERVIEW, OFFER, CLOSE_OUT];
+
+/** A card dragged out of Interview: the two behind it accept it as well. */
+const FROM_INTERVIEW = [APPLIED, SCREENING, OFFER, CLOSE_OUT];
 
 describe("nextTargetInDirection", () => {
   it("finds the adjacent column from a card at any height in its own", () => {
@@ -45,59 +50,64 @@ describe("nextTargetInDirection", () => {
     expect([first?.id, second?.id, third?.id]).toEqual(["Screening", "Interview", "Offer"]);
   });
 
-  it("walks back the way it came", () => {
-    expect(nextTargetInDirection(OFFER.centre, FROM_APPLIED, "left")?.id).toBe("Interview");
+  it("reaches the close-out rail by carrying on past the last column", () => {
+    // The rail is one press further right than Offer rather than a direction of
+    // its own, which is the whole point of moving it out from under the board.
+    const rail = nextTargetInDirection(OFFER.centre, FROM_APPLIED, "right");
+
+    expect(rail?.id).toBe("close-out");
   });
 
-  it("stops at the end rather than wrapping round", () => {
-    expect(nextTargetInDirection(OFFER.centre, FROM_APPLIED, "right")).toBeNull();
-    expect(nextTargetInDirection({ x: 150, y: 400 }, FROM_APPLIED, "left")).toBeNull();
-  });
-
-  it("never offers the close-out zone sideways", () => {
-    // It is full width, so its centre sits to the right of a card in Applied and
-    // a nearest-centre rule with no spanning test would hand it back here.
+  it("does not skip to the rail from a column that has columns ahead of it", () => {
+    // It is the last target on the row, so a nearest-centre rule with no sense of
+    // distance would hand it back from anywhere. Nearest along the axis wins.
     for (const from of [{ x: 150, y: 400 }, SCREENING.centre, INTERVIEW.centre]) {
       expect(nextTargetInDirection(from, FROM_APPLIED, "right")?.id).not.toBe("close-out");
-      expect(nextTargetInDirection(from, FROM_APPLIED, "left")?.id).not.toBe("close-out");
     }
   });
 
-  it("reaches the close-out zone downwards, from any column", () => {
-    for (const from of [{ x: 150, y: 400 }, SCREENING.centre, OFFER.centre]) {
-      expect(nextTargetInDirection(from, FROM_APPLIED, "down")?.id).toBe("close-out");
+  it("steps back one column at a time", () => {
+    // The pipeline runs both ways now, so an earlier column is a target and the
+    // left arrow walks the row the way the right arrow does.
+    const first = nextTargetInDirection(INTERVIEW.centre, FROM_INTERVIEW, "left");
+    const second = nextTargetInDirection(first!.centre, FROM_INTERVIEW, "left");
+
+    expect([first?.id, second?.id]).toEqual(["Screening", "Applied"]);
+  });
+
+  it("stops at either end rather than wrapping round", () => {
+    expect(nextTargetInDirection(CLOSE_OUT.centre, FROM_APPLIED, "right")).toBeNull();
+    expect(nextTargetInDirection(APPLIED.centre, FROM_INTERVIEW, "left")).toBeNull();
+  });
+
+  it("never comes back out of the rail into anything but a column", () => {
+    const back = nextTargetInDirection(CLOSE_OUT.centre, FROM_APPLIED, "left");
+
+    expect(back?.id).toBe("Offer");
+  });
+
+  it("offers nothing vertically, from anywhere on the board", () => {
+    // The mutation check for the deleted fallback, and the reason it is written
+    // from the top of a column as well as the middle: with a fallback to whatever
+    // is nearest below, a downward press from a card near the top of Applied
+    // finds no target spanning its `x` and drifts sideways into Screening - a
+    // down arrow that moves the card across the board.
+    for (const from of [
+      { x: 150, y: 110 },
+      { x: 150, y: 400 },
+      { x: 150, y: 690 },
+    ]) {
+      expect(nextTargetInDirection(from, FROM_APPLIED, "down"), "down").toBeNull();
+      expect(nextTargetInDirection(from, FROM_APPLIED, "up"), "up").toBeNull();
     }
   });
 
-  it("comes back up into a column even from a gutter", () => {
-    // The zone spans all four columns, so its own centre lands in the gap
-    // between two of them. Requiring a column to span that point would leave the
-    // up arrow doing nothing at all, on a board that looks like it should.
-    const up = nextTargetInDirection(CLOSE_OUT.centre, FROM_APPLIED, "up");
-
-    expect(up).not.toBeNull();
-    expect(up?.id).not.toBe("close-out");
-  });
-
-  it("is deterministic about which column it comes back up into", () => {
-    const first = nextTargetInDirection(CLOSE_OUT.centre, FROM_APPLIED, "up");
-    const again = nextTargetInDirection(CLOSE_OUT.centre, [...FROM_APPLIED].reverse(), "up");
-
-    expect(first?.id).toBe(again?.id);
-  });
-
-  it("still keeps a column out of the way of a downward press", () => {
-    // The fallback is for the vertical axis, and this is what it must not undo:
-    // from a card near the top of Applied every column's centre is below it, and
-    // without the spanning test the down arrow would move sideways into one.
-    expect(nextTargetInDirection({ x: 150, y: 110 }, FROM_APPLIED, "down")?.id).toBe("close-out");
-  });
-
-  it("offers nothing at all when nothing accepts the card", () => {
-    // A card in Offer: no column takes it, and the zone is the only target. So
-    // sideways is empty and downwards is not.
-    expect(nextTargetInDirection({ x: 1040, y: 400 }, [CLOSE_OUT], "right")).toBeNull();
-    expect(nextTargetInDirection({ x: 1040, y: 400 }, [CLOSE_OUT], "down")?.id).toBe("close-out");
+  it("offers only the rail when no column accepts the card", () => {
+    // A card in Offer on a forward-only pipeline had nowhere to go but the rail.
+    // It is still the shape to check: whatever the accept rules leave, sideways
+    // finds it and vertical finds nothing.
+    expect(nextTargetInDirection({ x: 1040, y: 400 }, [CLOSE_OUT], "right")?.id).toBe("close-out");
+    expect(nextTargetInDirection({ x: 1040, y: 400 }, [CLOSE_OUT], "down")).toBeNull();
   });
 
   it("does not depend on the order the targets were registered in", () => {

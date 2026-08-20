@@ -19,17 +19,19 @@ import type { BoardCard, BoardColumn } from "./board";
 /**
  * The stages whose cards this column will accept.
  *
- * The pipeline only moves forward: an active application may skip ahead but
- * never step back, so everything earlier in the order may enter and nothing
- * later may. Applied accepts nothing at all, being the first.
+ * Every active stage but its own: the pipeline runs in both directions, so a
+ * card may skip ahead and may equally be put back where it belongs. Only the
+ * column a card is already in refuses it, since a move to the stage it already
+ * occupies is not a transition.
  *
  * Handed to dnd-kit as a droppable's `accept`, which it checks against the
- * draggable's `type` - so an illegal drop never registers rather than being
- * caught after the fact. The client's model of the state machine is still only a
- * convenience: the server judges every move and a refusal is still handled.
+ * draggable's `type` - so a drop the pipeline would refuse never registers
+ * rather than being caught after the fact. The client's model of the state
+ * machine is still only a convenience: the server judges every move and a
+ * refusal is still handled.
  */
 export function stagesAcceptedBy(stage: ActiveStage): ActiveStage[] {
-  return ACTIVE_STAGES.slice(0, ACTIVE_STAGES.indexOf(stage));
+  return ACTIVE_STAGES.filter((candidate) => candidate !== stage);
 }
 
 /**

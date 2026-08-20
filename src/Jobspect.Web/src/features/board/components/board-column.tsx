@@ -80,7 +80,7 @@ export function BoardColumn({ column, campaignId }: BoardColumnProps) {
         </p>
       ) : (
         <>
-          <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col gap-1.5">
             {column.cards.map((card) => (
               <BoardCard
                 key={card.id}

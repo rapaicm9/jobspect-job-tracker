@@ -375,16 +375,23 @@ test.describe("dragging a card", () => {
     await expect(column(page, "Interview")).toContainText("Frontend Engineer");
   });
 
-  test("does not accept a drop on an earlier column", async ({ page }) => {
-    // The pipeline has no backward move for a live application, so the board
-    // does not offer one. Nothing is sent and nothing is refused.
+  test("accepts a drop on an earlier column, however far back", async ({ page }) => {
+    // The correction case, and the common one: a card moved on by mistake goes
+    // back the way it came. A step back is not restricted to the adjacent column
+    // any more than a skip forward is, so this drops two stages at once.
     const email = await signInWith(page, [{ stage: "Interview", role: "Frontend Engineer" }]);
 
     await dragCardTo(page, "Frontend Engineer", "Applied");
 
-    await expect(column(page, "Interview")).toContainText("Frontend Engineer");
-    await expect(column(page, "Applied")).toContainText("Nothing in this stage.");
-    expect(await idempotencyKeys(email), "no write was attempted").toEqual([]);
+    // The announcement first, and deliberately: the columns show the optimistic
+    // move the instant the card is dropped, so asserting them proves only that
+    // the gesture was understood. This sentence is written when the server has
+    // answered, which is what makes the assertion below about a real write.
+    await expect(moveAnnouncement(page)).toContainText("Frontend Engineer moved to Applied");
+
+    await expect(column(page, "Applied")).toContainText("Frontend Engineer");
+    await expect(column(page, "Interview")).toContainText("Nothing in this stage.");
+    expect(await idempotencyKeys(email), "one write was attempted").toHaveLength(1);
   });
 
   test("returns the card and says why when the pipeline refuses", async ({ page }) => {
@@ -694,28 +701,44 @@ test.describe("the keyboard", () => {
     expect(await idempotencyKeys(email), "no write was attempted").toEqual([]);
   });
 
-  test("never offers a column the pipeline would refuse", async ({ page }) => {
-    // An earlier column is not a drop target at all, so there is nothing to the
-    // left of a card in Interview and the arrow key has nowhere to go.
-    const email = await signInWith(page, [{ stage: "Interview", role: "Frontend Engineer" }]);
+  test("steps a card back into an earlier column", async ({ page }) => {
+    // The correction path, and the reason it is a keyboard test as well as a
+    // pointer one: an earlier column used to be no drop target at all, so the
+    // left arrow had nowhere to go and this move could not be made without one.
+    await signInWith(page, [{ stage: "Interview", role: "Frontend Engineer" }]);
 
     await liftCardWithKeyboard(page, "Frontend Engineer");
     await page.keyboard.press("ArrowLeft");
-    await page.keyboard.press("ArrowLeft");
-
-    await expect(dragAnnouncement(page)).not.toContainText("over Applied");
-    await expect(dragAnnouncement(page)).not.toContainText("over Screening");
-
+    await expect(dragAnnouncement(page)).toContainText("over Screening, column 2 of 4");
     await page.keyboard.press("Space");
-    await expect(column(page, "Interview")).toContainText("Frontend Engineer");
-    expect(await idempotencyKeys(email)).toEqual([]);
+
+    await expect(column(page, "Screening")).toContainText("Frontend Engineer");
+    await expect(column(page, "Interview")).toContainText("Nothing in this stage.");
+    await expect(moveAnnouncement(page)).toContainText("Frontend Engineer moved to Screening");
   });
 
-  test("reaches the close-out area downwards and opens the picker", async ({ page }) => {
-    await signInWith(page, [{ stage: "Offer", role: "Frontend Engineer" }]);
+  test("offers nothing above or below, because the board is one row", async ({ page }) => {
+    // The close-out rail moved out from under the columns into a track beside
+    // Offer, which leaves the vertical axis empty. A press that did something
+    // here would mean the geometry had found a target that is not on the row.
+    const email = await signInWith(page, [{ stage: "Screening", role: "Frontend Engineer" }]);
 
     await liftCardWithKeyboard(page, "Frontend Engineer");
     await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowUp");
+
+    await expect(dragAnnouncement(page)).not.toContainText("over");
+
+    await page.keyboard.press("Space");
+    await expect(column(page, "Screening")).toContainText("Frontend Engineer");
+    expect(await idempotencyKeys(email), "no write was attempted").toEqual([]);
+  });
+
+  test("reaches the close-out area past the last column and opens the picker", async ({ page }) => {
+    await signInWith(page, [{ stage: "Offer", role: "Frontend Engineer" }]);
+
+    await liftCardWithKeyboard(page, "Frontend Engineer");
+    await page.keyboard.press("ArrowRight");
     await expect(dragAnnouncement(page)).toContainText("close-out area");
 
     await page.keyboard.press("Space");

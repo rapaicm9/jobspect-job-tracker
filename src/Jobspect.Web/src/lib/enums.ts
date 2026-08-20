@@ -65,7 +65,13 @@ export const REMINDER_KINDS = [
   "FollowUp",
 ] as const;
 
-export const TRANSITION_KINDS = ["Advance", "Terminal", "Reopen", "Reclassify"] as const;
+export const TRANSITION_KINDS = [
+  "Advance",
+  "StepBack",
+  "Terminal",
+  "Reopen",
+  "Reclassify",
+] as const;
 
 // The one union with no counterpart in the contract: entitlements are never
 // serialised as a typed member, so the agreement test cannot check this and the

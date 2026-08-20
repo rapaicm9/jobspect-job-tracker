@@ -24,7 +24,7 @@ export type ReadingPart = { text: string } | { stage: Stage | UnknownStage };
 /**
  * What an entry reads as, stages included.
  *
- * The four transition kinds are four different events and one wording for all of
+ * The five transition kinds are five different events and one wording for all of
  * them loses that. "Moved from Offer to Rejected" is true and says nothing about
  * what happened; "Closed as Rejected" is what the user did.
  *
@@ -62,6 +62,7 @@ const ADVANCE = { lead: "Moved from", joiner: "to", oneEnd: "Moved to" };
 
 const WORDING: Record<string, typeof ADVANCE> = {
   Advance: ADVANCE,
+  StepBack: { lead: "Moved back from", joiner: "to", oneEnd: "Moved back to" },
   Reopen: { lead: "Reopened, from", joiner: "back to", oneEnd: "Reopened to" },
   Reclassify: { lead: "Reclassified from", joiner: "to", oneEnd: "Reclassified as" },
 };

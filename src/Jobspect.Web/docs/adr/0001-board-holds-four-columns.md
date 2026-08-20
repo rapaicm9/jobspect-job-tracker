@@ -2,10 +2,11 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-08
-- **Amended:** 2026-08-20 — the closed chip counts approximately and does not move optimistically, a
-  step back is not a drop target, the unrecognised-stage column turned out to be unreachable, the
-  close-out zone is revealed by the gesture, and the target model is traversed by target rather than
-  by distance. See _Revision history_.
+- **Amended:** 2026-08-20 — the closed chip counts approximately and does not move optimistically,
+  the unrecognised-stage column turned out to be unreachable, the close-out zone is revealed by the
+  gesture and sits in a reserved rail after Offer, the target model is traversed by target rather
+  than by distance and along one axis, and the board now moves cards in both directions. See
+  _Revision history_.
 
 ## Context
 
@@ -22,22 +23,30 @@ the domain.
 The board shows **four columns: Applied, Screening, Interview, Offer.**
 
 - Closing an application is a **different gesture** from advancing it: a "Close out" drop zone that
-  opens an outcome picker, or the transition menu on the card. A terminal move is not a fifth
-  column to the right. **The zone exists only while a card is in hand** — it appears below the
-  columns when a drag starts and goes with it — and **the picker offers only the outcomes the
-  pipeline allows from that stage**, so Accepted is on it from Offer and from nowhere else. The drop
-  itself writes nothing: it asks the question, and the picker is where it is answered.
+  opens an outcome picker, or the transition menu on the card. A terminal move is not four more
+  columns. **The zone exists only while a card is in hand** — it appears when a drag starts and goes
+  with it — and **the picker offers only the outcomes the pipeline allows from that stage**, so
+  Accepted is on it from Offer and from nowhere else. The drop itself writes nothing: it asks the
+  question, and the picker is where it is answered.
+- **The zone is a narrow rail after Offer, in a track the board reserves permanently.** One target
+  at the end of the pipeline asserts no ordering among the outcomes — the picker is what chooses
+  between them — so the argument below rules out four terminal columns and not this. Reaching it
+  must not mean scrolling past a full column, which is what a strip beneath the board cost. The
+  track is held open whether or not a drag is running, and that is the load-bearing half: a track
+  that appeared with the gesture would resize the four columns at the moment a card is lifted,
+  moving every drop target after the drag library has measured it.
 - **Closed applications live in the Applications list**, behind an outcome filter. The board header
   carries a chip counting them, linking to that filtered list. **The count is an approximation and
   says so**: `GET /api/v1/applications` returns no totals (backend ADR 0008 settles paging as
   forward-only keyset with no count), so the chip is the length of one read bounded at the
   endpoint's ceiling — "87 closed" when the read ends inside it, "100+ closed" when the response
   still carries a cursor. A number the client cannot know is never asserted as one.
-- **Skips are legal; steps back are not offered.** The API permits a jump forward, so a drop must
-  not be restricted to the adjacent column. It does not permit an active application to move
-  backwards — the aggregate requires a strictly later stage — so an earlier column is **not a drop
-  target**, in the same way the transition menu lists only the moves the pipeline allows. The client
-  gates the gesture; the server still judges the move, and a `422` is still handled.
+- **The board runs in both directions, and skips are legal in both.** The API permits a jump
+  forward and, since the pipeline learned to be corrected, a move to any earlier active stage — so a
+  drop is restricted neither to the adjacent column nor to one direction. Every active column except
+  the card's own is a drop target, and the only refusal left is the column it already sits in, which
+  is not a transition at all. The client gates the gesture; the server still judges the move, and a
+  `422` is still handled.
 - **The board reads one request per column**, each narrowed to a single stage, rather than walking
   a combined list. A combined walk fills unevenly — a page can come back almost entirely Applied,
   leaving Offer showing an empty state that is not true until the walk ends.
@@ -59,12 +68,14 @@ Three arguments fix this, in order of weight:
 - The board route renders four columns; the drag-and-drop target model has four ordered targets
   plus one close-out zone, and the zone's drop handler opens a picker rather than committing a
   transition.
-- **That model is traversed by target, not by distance.** Arrow keys move a lifted card to the next
-  legal target rather than nudging it a fixed number of pixels, which is what the drag library
-  provides. Five targets and a strictly forward pipeline make the number of presses small and the
-  set of destinations exact; a pixel offset would make crossing the board a matter of dozens of
-  presses and would have to guess at a layout that is a flex row on small screens and a grid on
-  large ones.
+- **That model is traversed by target, not by distance, along one axis.** Arrow keys move a lifted
+  card to the next legal target rather than nudging it a fixed number of pixels, which is what the
+  drag library provides. Five targets make the number of presses small and the set of destinations
+  exact; a pixel offset would make crossing the board a matter of dozens of presses and would have
+  to guess at a layout that is a flex row on small screens and a grid on large ones. With the
+  close-out rail beside Offer the five sit in a single row, so left and right traverse the whole
+  board and up and down reach nothing — inert rather than unimplemented, since there is nothing
+  above or below a lifted card to reach.
 - **The closed chip is not corrected optimistically.** A close-out takes the card out of its column
   immediately and leaves the chip reporting its old number until the write's own re-render lands.
   Covering that window would mean putting the chip inside the optimistic subtree, which is a change
@@ -141,6 +152,23 @@ Three arguments fix this, in order of weight:
   follows — offering Accepted from Applied would be inviting a refusal. And the closed chip beside
   it is **left to the re-render**, recorded under _Consequences_ because a reader of the columns
   alone would expect it to move with them.
+- **2026-08-20 — the close-out zone moves beside Offer.** The original put it below the columns and
+  that placement did not survive a real job search: with twenty-six applications on the board,
+  closing one at the bottom of a full column meant scrolling past every card to reach the target.
+  It now sits in a narrow rail after Offer. This does **not** reopen what the record rejected — four
+  terminal columns would still assert an order among four unordered outcomes, and one target that
+  opens a picker asserts nothing of the kind. The reserved track is recorded under _Decision_
+  rather than left to the implementation because the reason for it is not aesthetic: a track
+  conjured up by the gesture would move the four columns, and their measured rectangles, out from
+  under the card being dragged.
+- **2026-08-20 — steps back are offered after all.** The original reasoned from what the API allowed
+  and got the client right; what was wrong was the API. Refusing a backward move assumed every move
+  is deliberate, and in use the common case is the opposite — a card dropped in the wrong column, a
+  stage picked in error — with no way to undo it, on a board whose whole gesture invites a slip. The
+  aggregate now permits an active application to move to any earlier active stage and records it as
+  its own kind of transition, so every active column but the card's own is a drop target and the
+  left arrow walks the row the way the right one does. The paragraph this replaces is left below,
+  since it was true of the pipeline that existed when it was written.
 - **2026-08-19 — the unrecognised-stage column is struck.** It cannot be reached. The board reads
   one request per column, each naming a single stage, and the endpoint narrows to the stages it was
   given — so no read can answer with a row in a stage that was not asked for. The instruction

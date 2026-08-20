@@ -71,8 +71,11 @@ test.describe("the transition menu", () => {
     const menu = await openTransitionMenu(page);
 
     await expect(menu.getByRole("menuitem", { name: "Accepted" })).toBeVisible();
-    // Nothing is further forward than Offer.
-    await expect(menu.getByRole("menuitem", { name: "Screening" })).toHaveCount(0);
+
+    // Nothing is further forward than Offer, but everything behind it is still
+    // offered: an application moved on by mistake is put back from here.
+    await expect(menu.getByRole("menuitem", { name: "Screening" })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Offer" })).toHaveCount(0);
   });
 
   test("lets a closed application be reopened or reclassified, but not accepted", async ({

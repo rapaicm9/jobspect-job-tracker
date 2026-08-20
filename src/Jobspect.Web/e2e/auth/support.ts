@@ -162,7 +162,7 @@ export async function openPalette(page: Page): Promise<void> {
  * independent of hydration order rather than lucky about it.
  */
 export async function openTransitionMenu(page: Page) {
-  const trigger = page.getByRole("button", { name: "Move" });
+  const trigger = page.getByRole("button", { name: "Status" });
   const menu = page.getByRole("menu");
 
   await expect(async () => {
@@ -180,7 +180,7 @@ export async function openTransitionMenu(page: Page) {
  * "Close out {role}", so the first two words are not enough to tell them apart.
  */
 export function closeOutZone(page: Page): Locator {
-  return page.getByText("drop to record an outcome");
+  return page.getByText("drop here");
 }
 
 /**
