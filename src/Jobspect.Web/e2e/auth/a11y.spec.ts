@@ -146,6 +146,23 @@ for (const colorScheme of ["light", "dark"] as const) {
       }
     });
 
+    test("the not-found page has none with a session", async ({ page }) => {
+      // Signed in it renders a different set of controls from the signed-out
+      // version e2e/a11y.spec.ts sweeps - two links and a sign-out form rather
+      // than one link - and it is the screen a reader reaches already stuck, so
+      // it is the last place a violation should be waiting.
+      await registerThroughTheForm(page, anEmail());
+
+      await page.goto("/no-such-page");
+
+      const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
+
+      expect(
+        violations.map((v) => `${v.id} (${v.nodes.length}): ${v.help}`),
+        "axe found violations on the not-found page",
+      ).toEqual([]);
+    });
+
     test("the application detail has none with every panel populated", async ({ page }) => {
       const email = anEmail();
       await registerThroughTheForm(page, email);
