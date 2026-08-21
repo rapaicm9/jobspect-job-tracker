@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import localFont from "next/font/local";
+
+import { parseTheme, THEME_COOKIE, themeClass } from "@/lib/theme";
+
 import "./globals.css";
 
 // Self-hosted rather than fetched: the Content-Security-Policy allows
@@ -26,9 +30,17 @@ export const metadata: Metadata = {
 // application that could be shared between two users anyway.
 export const dynamic = "force-dynamic";
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // Server-rendered rather than set by a script, so the first paint is already
+  // the right theme. A class applied afterwards makes every `transition-colors`
+  // in the tree animate out of the old palette.
+  const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value);
+
   return (
-    <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${themeClass(theme)} h-full antialiased`.trim()}
+    >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

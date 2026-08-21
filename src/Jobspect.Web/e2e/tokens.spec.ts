@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, expectTheme, LIGHT_PROJECT, test } from "./theme";
 
 // The palette was solved against contrast targets rather than picked by eye,
 // so the targets are worth asserting: a token edited to a nicer-looking value
@@ -59,6 +59,15 @@ const NAMES = [
     `--outcome-${o}-foreground`,
   ]),
 ];
+
+// Every floor below holds in both themes by construction, so a lane that had
+// quietly stopped applying its class would go on passing while testing dark
+// twice. This is the one assertion that can tell the two runs apart.
+test("the page renders the theme its project asked for", async ({ page }, testInfo) => {
+  await page.goto("/");
+
+  await expectTheme(page, testInfo.project.name === LIGHT_PROJECT ? "light" : "dark");
+});
 
 test("body text and UI boundaries clear their WCAG floors", async ({ page }) => {
   await page.goto("/");

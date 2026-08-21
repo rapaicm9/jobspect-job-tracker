@@ -3,14 +3,14 @@
 @import "shadcn/tailwind.css";
 @import "../styles/tokens.css";
 
-/* Matches the media query the tokens flip under, and `.dark` as well. Nothing
-   sets that class today; when something does, the variant already works and
-   only the token block has to follow. */
+/* Dark is the default, so this applies by absence rather than by match: every
+   `dark:` utility is live unless the light opt-in is set on the root element.
+   Naming the negative is what keeps the variant and the token file agreeing —
+   both are now keyed on `.light` and nothing else. `:where` around the `:not`
+   keeps the specificity at zero, so a `dark:` utility still loses to a later
+   one the way an ordinary utility does. */
 @custom-variant dark {
-  @media (prefers-color-scheme: dark) {
-    @slot;
-  }
-  &:where(.dark, .dark *) {
+  &:where(:not(.light, .light *)) {
     @slot;
   }
 }
@@ -108,8 +108,14 @@
   html {
     @apply font-sans;
     /* Tells the UA to render form controls and scrollbars for the theme the
-       tokens are already painting. */
-    color-scheme: light dark;
+       tokens are already painting. A single keyword rather than `light dark`,
+       which would hand the choice back to the system setting the tokens no
+       longer consult. */
+    color-scheme: dark;
+  }
+
+  html.light {
+    color-scheme: light;
   }
 
   body {

@@ -1,5 +1,6 @@
 import { AxeBuilder } from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+
+import { expect, test } from "./theme";
 
 // Every route that renders HTML and can be reached without an account. The
 // health endpoints serve text/plain and have nothing for axe to analyse, and the

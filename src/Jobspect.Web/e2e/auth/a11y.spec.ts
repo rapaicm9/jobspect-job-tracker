@@ -1,6 +1,8 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { applyTheme, expectTheme } from "../theme";
+
 import {
   anEmail,
   dragCardToCloseOut,
@@ -50,9 +52,22 @@ const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 // because every spec in it is about colour; the session specs beside this one
 // would only sign in twice to prove the same thing, so the theme is scoped to
 // the sweep that reads it rather than to a second project.
-for (const colorScheme of ["light", "dark"] as const) {
-  test.describe(`${colorScheme} theme`, () => {
-    test.use({ colorScheme });
+//
+// Applied by class rather than by `colorScheme`, which since dark became the
+// default selects neither theme - see ../theme.ts.
+for (const theme of ["light", "dark"] as const) {
+  test.describe(`${theme} theme`, () => {
+    test.beforeEach(async ({ page }) => {
+      await applyTheme(page, theme);
+    });
+
+    // The sweeps below would all pass against the wrong theme, so one spec in
+    // the loop checks that the loop is varying anything at all.
+    test("renders in the theme this pass is sweeping", async ({ page }) => {
+      await registerThroughTheForm(page, anEmail());
+
+      await expectTheme(page, theme);
+    });
 
     test("the command palette has none while it is open", async ({ page }) => {
       await registerThroughTheForm(page, anEmail());
