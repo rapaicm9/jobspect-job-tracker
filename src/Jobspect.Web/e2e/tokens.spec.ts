@@ -47,7 +47,10 @@ const NAMES = [
   "--background",
   "--foreground",
   "--card",
+  "--muted",
   "--muted-foreground",
+  "--secondary",
+  "--secondary-foreground",
   "--primary",
   "--primary-foreground",
   "--border",
@@ -81,6 +84,22 @@ test("body text and UI boundaries clear their WCAG floors", async ({ page }) => 
   // --border is a divider and exempt from 1.4.11; --border-strong identifies a
   // control and is not.
   expect(contrast(t["--border-strong"], t["--background"])).toBeGreaterThanOrEqual(3);
+});
+
+test("a selected control does not read as a hovered one", async ({ page }) => {
+  await page.goto("/");
+  const t = await readTokens(page, NAMES);
+
+  // --secondary marks the current nav item, the palette's highlighted row and a
+  // pressed filter; --muted is what those same controls paint on hover. The two
+  // held the same value once, which left hovering an unselected filter looking
+  // exactly like selecting it.
+  expect(contrast(t["--secondary"], t["--muted"]), "selected vs hover").toBeGreaterThanOrEqual(
+    1.25,
+  );
+
+  // It is still a surface with text on it.
+  expect(contrast(t["--secondary-foreground"], t["--secondary"])).toBeGreaterThanOrEqual(4.5);
 });
 
 test("every chip reads against its own surface", async ({ page }) => {
