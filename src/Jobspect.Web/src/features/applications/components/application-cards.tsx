@@ -6,6 +6,7 @@ import type { ApplicationRow } from "../to-application-row";
 import { isColumnVisible, type ViewPreferences } from "../view-preferences";
 
 import { ApplicationLink } from "./application-link";
+import { DeleteRowButton } from "./delete-row-button";
 import { StageChip } from "./stage-chip";
 
 /**
@@ -39,9 +40,11 @@ function DateFact({ label, value }: { label: string; value: string | null }) {
 export interface ApplicationCardsProps {
   rows: ApplicationRow[];
   preferences: ViewPreferences;
+  /** Called once a card's delete has been confirmed by the server. */
+  onDeleted: (id: string) => void;
 }
 
-export function ApplicationCards({ rows, preferences }: ApplicationCardsProps) {
+export function ApplicationCards({ rows, preferences, onDeleted }: ApplicationCardsProps) {
   const compensation = (row: ApplicationRow) => formatMoney(row.compensation);
 
   return (
@@ -75,7 +78,16 @@ export function ApplicationCards({ rows, preferences }: ApplicationCardsProps) {
                 <p className="text-sm text-muted-foreground">{row.companyName}</p>
               )}
             </div>
-            <StageChip stage={row.stage} />
+            <div className="flex shrink-0 items-center gap-1">
+              <StageChip stage={row.stage} />
+              <DeleteRowButton
+                applicationId={row.id}
+                role={row.role}
+                onDeleted={() => {
+                  onDeleted(row.id);
+                }}
+              />
+            </div>
           </div>
 
           {/* Only the facts this application has. A card is read one at a time,

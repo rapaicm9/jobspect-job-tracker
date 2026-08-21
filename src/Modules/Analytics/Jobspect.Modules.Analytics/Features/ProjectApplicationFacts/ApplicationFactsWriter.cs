@@ -58,6 +58,25 @@ internal sealed class ApplicationFactsWriter(AnalyticsDbContext dbContext)
         "@occurred_at >= COALESCE(f.campaign_recorded_at, '-infinity'::timestamptz)";
 
     /// <summary>
+    /// The guard on the whole update: a tombstoned row takes nothing further.
+    /// <para>
+    /// <b>A <c>WHERE</c> on the <c>DO UPDATE</c>, which the note above calls wrong -
+    /// and here it is the only thing that is right.</b> That note is about the
+    /// ordering guard, whose job is to hold back the latest-wins columns while
+    /// letting the monotone ones through; gating the whole update would take the
+    /// monotone columns with it, and those are meant to be immune to ordering. This
+    /// guard wants exactly what that one must not do. A deleted application has no
+    /// facts of any kind left to record, monotone or otherwise, so the update stops
+    /// wholesale.
+    /// </para>
+    /// <para>
+    /// The insert half needs no equivalent: the tombstone holds the key, so a late
+    /// event conflicts with it and lands here rather than inserting.
+    /// </para>
+    /// </summary>
+    private const string NotDeleted = "f.deleted_at IS NULL";
+
+    /// <summary>
     /// What a user first told us about an application: the dimensions no other
     /// event carries, the campaign it opened in, and the stage it starts at.
     /// <para>
@@ -96,6 +115,7 @@ internal sealed class ApplicationFactsWriter(AnalyticsDbContext dbContext)
                 stage_entered_at = CASE WHEN {StageIsNewer}
                                         THEN excluded.stage_entered_at ELSE f.stage_entered_at END,
                 stage_recorded_at = GREATEST(f.stage_recorded_at, excluded.stage_recorded_at)
+            WHERE {NotDeleted}
             """,
             cancellationToken,
             Uuid("application_id", applicationId),
@@ -145,6 +165,7 @@ internal sealed class ApplicationFactsWriter(AnalyticsDbContext dbContext)
                 reached_screening_at = LEAST(f.reached_screening_at, excluded.reached_screening_at),
                 reached_interview_at = LEAST(f.reached_interview_at, excluded.reached_interview_at),
                 reached_offer_at     = LEAST(f.reached_offer_at,     excluded.reached_offer_at)
+            WHERE {NotDeleted}
             """,
             cancellationToken,
             Uuid("application_id", applicationId),
@@ -183,6 +204,7 @@ internal sealed class ApplicationFactsWriter(AnalyticsDbContext dbContext)
                 outcome   = CASE WHEN {StageIsNewer} THEN excluded.outcome   ELSE f.outcome   END,
                 closed_at = CASE WHEN {StageIsNewer} THEN excluded.closed_at ELSE f.closed_at END,
                 stage_recorded_at = GREATEST(f.stage_recorded_at, excluded.stage_recorded_at)
+            WHERE {NotDeleted}
             """,
             cancellationToken,
             Uuid("application_id", applicationId),
@@ -211,6 +233,7 @@ internal sealed class ApplicationFactsWriter(AnalyticsDbContext dbContext)
                 campaign_id = CASE WHEN {CampaignIsNewer}
                                    THEN excluded.campaign_id ELSE f.campaign_id END,
                 campaign_recorded_at = GREATEST(f.campaign_recorded_at, excluded.campaign_recorded_at)
+            WHERE {NotDeleted}
             """,
             cancellationToken,
             Uuid("application_id", applicationId),
@@ -236,11 +259,64 @@ internal sealed class ApplicationFactsWriter(AnalyticsDbContext dbContext)
             ON CONFLICT (application_id) DO UPDATE SET
                 first_interview_scheduled_at =
                     LEAST(f.first_interview_scheduled_at, excluded.first_interview_scheduled_at)
+            WHERE {NotDeleted}
             """,
             cancellationToken,
             Uuid("application_id", applicationId),
             Uuid("owner_id", ownerId.Value),
             Instant("scheduled_at", scheduledAt));
+
+    /// <summary>
+    /// The application is gone, and this row stops being about one: the tombstone
+    /// goes on and every fact comes off.
+    /// <para>
+    /// The row stays because the key has to stay occupied - see
+    /// <see cref="Domain.ApplicationFacts.DeletedAt"/> for why deleting it outright
+    /// would let a retrying event insert it straight back. What it must not keep is
+    /// content: the source and the work mode are the user's own account of a search
+    /// they asked to be rid of, so they are nulled in the same statement rather
+    /// than left sitting behind a filter.
+    /// </para>
+    /// <para>
+    /// Monotone, written with <c>LEAST</c>, and so needing no watermark: an
+    /// application is not deleted for the first time twice, and re-applying this
+    /// changes nothing. The one column left alone is <c>created_at</c>, which
+    /// records when this module first heard of the application and is operational
+    /// rather than a fact about it.
+    /// </para>
+    /// </summary>
+    public Task DeletionAsync(
+        Guid applicationId,
+        UserId ownerId,
+        DateTimeOffset occurredAt,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            """
+            INSERT INTO analytics.application_facts AS f (application_id, owner_id, deleted_at)
+            VALUES (@application_id, @owner_id, @occurred_at)
+            ON CONFLICT (application_id) DO UPDATE SET
+                deleted_at = LEAST(f.deleted_at, excluded.deleted_at),
+                campaign_id = NULL,
+                campaign_recorded_at = NULL,
+                company_id = NULL,
+                applied_date = NULL,
+                source = NULL,
+                work_mode = NULL,
+                stage = NULL,
+                outcome = NULL,
+                stage_entered_at = NULL,
+                closed_at = NULL,
+                stage_recorded_at = NULL,
+                first_response_at = NULL,
+                reached_screening_at = NULL,
+                reached_interview_at = NULL,
+                reached_offer_at = NULL,
+                first_interview_scheduled_at = NULL
+            """,
+            cancellationToken,
+            Uuid("application_id", applicationId),
+            Uuid("owner_id", ownerId.Value),
+            Instant("occurred_at", occurredAt));
 
     /// <summary>
     /// Runs one statement. No transaction and no execution strategy, both by

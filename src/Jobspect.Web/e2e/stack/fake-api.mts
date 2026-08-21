@@ -60,7 +60,8 @@ type FailableCall =
   | "create-contact"
   | "transition-in-flight"
   | "transition-unavailable"
-  | "transition-illegal";
+  | "transition-illegal"
+  | "delete-application";
 
 const APPLICATION_PATH = /^\/api\/v1\/applications\/([^/]+)$/;
 const INTERVIEWS_PATH = /^\/api\/v1\/applications\/([^/]+)\/interviews$/;
@@ -336,6 +337,27 @@ function sendProblem(response: ServerResponse, status: number, code: string, det
     status,
     detail,
     code,
+  });
+
+  response.writeHead(status, {
+    "content-type": "application/problem+json",
+    "content-length": Buffer.byteLength(payload),
+  });
+  response.end(payload);
+}
+
+/**
+ * A problem with no `code`, which is what a failure no endpoint named looks
+ * like - an outage, a proxy, anything below the application. The client falls
+ * back to the status family for these rather than guessing, and that fallback is
+ * the thing worth exercising.
+ */
+function sendUncodedProblem(response: ServerResponse, status: number, detail: string): void {
+  const payload = JSON.stringify({
+    type: "about:blank",
+    title: "Request failed",
+    status,
+    detail,
   });
 
   response.writeHead(status, {
@@ -1547,6 +1569,38 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
     applyUpdate(stored, body);
     send(response, 200, stored satisfies ApplicationResponse);
+    return;
+  }
+
+  if (method === "DELETE" && applicationMatch !== null) {
+    const userId = callerId(request);
+    if (userId === undefined) {
+      response.writeHead(401).end();
+      return;
+    }
+
+    if (isFailing(userId, "delete-application")) {
+      // 503 rather than 404, because the client reads a 404 as success - a
+      // refusal has to be one it cannot mistake for the row already being gone.
+      // Carries no `code`, which is what a real outage looks like: the status
+      // families exist for exactly the failures no endpoint named.
+      sendUncodedProblem(response, 503, "The service is unavailable.");
+      return;
+    }
+
+    const held = applications.get(userId) ?? [];
+    const index = held.findIndex((application) => application.id === applicationMatch[1]);
+
+    if (index === -1) {
+      // Including the second press of the same button, which the client reads
+      // as success - the row is gone, which is what was asked for.
+      sendProblem(response, 404, "application.not_found", "No such application for this account.");
+      return;
+    }
+
+    held.splice(index, 1);
+    applications.set(userId, held);
+    response.writeHead(204).end();
     return;
   }
 

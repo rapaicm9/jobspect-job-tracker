@@ -68,6 +68,13 @@ internal sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> op
             // reaches is not worth designing against - the read model aggregates
             // rather than counting precisely because that trade is available.
             facts.HasIndex(f => new { f.OwnerId, f.CampaignId });
+
+            // A deleted application's row survives to hold its key against a late
+            // event, and must reach no reader. Here rather than in each handler:
+            // the rule is a property of the table, and a figure that forgot it
+            // would be quietly wrong rather than broken. Erasure is the one caller
+            // that has to see through this - it says so with IgnoreQueryFilters.
+            facts.HasQueryFilter(f => f.DeletedAt == null);
         });
 
         builder.Entity<WeeklyGoal>(goal =>

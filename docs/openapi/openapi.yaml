@@ -684,6 +684,46 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
       security:
         - bearer: [ ]
+    delete:
+      tags:
+        - applications
+      operationId: deleteApplication
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        '401':
+          description: No usable access token. The challenge itself sends no body; a token that is valid but carries no subject is refused with one.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such resource for this account.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          description: The caller's request budget is spent. Retry-After says for how long.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: Something went wrong. No detail is disclosed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      security:
+        - bearer: [ ]
   '/api/v1/applications/{id}/transition':
     post:
       tags:

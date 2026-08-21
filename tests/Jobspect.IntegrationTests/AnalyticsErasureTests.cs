@@ -83,6 +83,38 @@ public sealed class AnalyticsErasureTests(ApiFixture fixture)
     public async Task Erasing_a_user_who_has_nothing_here_is_not_an_error() =>
         await Should.NotThrowAsync(EraseAsync(UserId.New()));
 
+    [Fact]
+    public async Task It_takes_the_tombstones_a_deleted_application_left_behind()
+    {
+        var tokens = await fixture.RegisterWithDefaultCampaignAsync(_client, Ct);
+        var ownerId = UserId.From(tokens.UserId);
+
+        var created = await (await _client.CreateApplicationAsync(
+            tokens.AccessToken, new { role = "Engineer" })).ReadApplicationAsync();
+
+        await Poll.UntilAsync(
+            async () => await RowCountAsync(ownerId) > 0,
+            "the read model should hold the application before it is deleted",
+            Ct);
+
+        (await _client.DeleteApplicationAsync(tokens.AccessToken, created.Id))
+            .IsSuccessStatusCode.ShouldBeTrue();
+
+        // The row survives its application on purpose, to hold the key against a
+        // late event. That makes it the one thing here an erasure could plausibly
+        // walk past: excluded from every figure, and so out of sight of anything
+        // that would otherwise have noticed it.
+        await Poll.UntilAsync(
+            async () => !await FactsExistAsync(created.Id),
+            "the deletion should reach the read model",
+            Ct);
+        (await RowCountAsync(ownerId)).ShouldBe(1);
+
+        await EraseAsync(ownerId);
+
+        (await RowCountAsync(ownerId)).ShouldBe(0);
+    }
+
     /// <summary>
     /// The ordering the erasure fan-out depends on: this module's handler has to
     /// run after the Applications module's, which deletes the events still owed on
@@ -148,12 +180,18 @@ public sealed class AnalyticsErasureTests(ApiFixture fixture)
             .HandleAsync(new UserDataDeletionRequested(Guid.CreateVersion7(), ownerId), Ct);
     }
 
+    /// <summary>
+    /// Every base row the user has, tombstones included - so it counts what erasure
+    /// has to remove rather than what the dashboard can see. Through the query
+    /// filter these tests would report a schema swept clean while the tombstones a
+    /// deleted application leaves behind were still sitting in it.
+    /// </summary>
     private async Task<int> RowCountAsync(UserId ownerId)
     {
         using var scope = fixture.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AnalyticsDbContext>();
 
-        return await db.ApplicationFacts.CountAsync(f => f.OwnerId == ownerId, Ct);
+        return await db.ApplicationFacts.IgnoreQueryFilters().CountAsync(f => f.OwnerId == ownerId, Ct);
     }
 
     private async Task<int> GoalCountAsync(UserId ownerId)

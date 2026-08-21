@@ -462,6 +462,141 @@ public sealed class AnalyticsProjectionTests(ApiFixture fixture)
         handlers.ShouldBeEmpty();
     }
 
+    // --------------------------------------------------------------- deletion
+
+    [Fact]
+    public async Task A_deleted_application_leaves_the_read_model()
+    {
+        var tokens = await fixture.RegisterWithDefaultCampaignAsync(_client, Ct);
+        var created = await (await _client.CreateApplicationAsync(tokens.AccessToken, new
+        {
+            role = "Platform Engineer",
+            appliedDate = "2026-03-01",
+        })).ReadApplicationAsync();
+
+        await WaitForFactsAsync(created.Id, f => f.AppliedDate is not null);
+        await ShouldSucceedAsync(_client.DeleteApplicationAsync(tokens.AccessToken, created.Id));
+
+        // Through the real outbox, the way a deletion actually arrives.
+        await Poll.UntilAsync(
+            async () => !await IsVisibleAsync(created.Id),
+            "the read model should stop seeing a deleted application",
+            Ct);
+    }
+
+    [Fact]
+    public async Task Nothing_the_application_said_survives_on_the_tombstone()
+    {
+        var (id, owner) = NewApplication();
+        foreach (var occurrence in HistoryFor(id, owner))
+        {
+            await ApplyAsync(occurrence);
+        }
+
+        await ApplyAsync(new ApplicationDeleted(Guid.CreateVersion7(), id, owner, T3.AddDays(30)));
+
+        // The key stays occupied and everything else goes. The source and the work
+        // mode are the user's own account of a search they asked to be rid of, so
+        // leaving them behind a filter would not be good enough.
+        var tombstone = (await RawFactsAsync(id)).ShouldNotBeNull();
+        tombstone.DeletedAt.ShouldBe(T3.AddDays(30));
+        Snapshot.Of(tombstone).ShouldBe(new Snapshot(
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+    }
+
+    [Fact]
+    public async Task An_event_arriving_after_the_delete_cannot_bring_it_back()
+    {
+        var (id, owner) = NewApplication();
+        await ApplyAsync(new ApplicationSubmitted(
+            Guid.CreateVersion7(), id, owner, OpenedCampaign, Company,
+            new DateOnly(2026, 3, 1), "Referral", "Remote", T1));
+
+        await ApplyAsync(new ApplicationDeleted(Guid.CreateVersion7(), id, owner, T2));
+
+        // The whole reason the row is tombstoned rather than deleted. An event that
+        // failed and is being retried lands after the delete, and every projection
+        // is an upsert - so a deleted row would be inserted straight back and count
+        // as an application forever, in a read model with nothing to rebuild from.
+        await ApplyAsync(new ApplicationStageChanged(Guid.CreateVersion7(), id, owner, "Applied", "Screening", T3));
+        await ApplyAsync(new ApplicationReachedTerminal(Guid.CreateVersion7(), id, owner, "Screening", "Rejected", T3));
+        await ApplyAsync(new ApplicationMovedToCampaign(Guid.CreateVersion7(), id, owner, OpenedCampaign, MovedCampaign, T3));
+        await ApplyAsync(new InterviewScheduled(Guid.CreateVersion7(), id, Guid.CreateVersion7(), owner, T3, T3));
+
+        (await IsVisibleAsync(id)).ShouldBeFalse();
+
+        // And not merely hidden: the late events wrote nothing at all, including
+        // the monotone columns that are otherwise immune to ordering.
+        var tombstone = (await RawFactsAsync(id)).ShouldNotBeNull();
+        Snapshot.Of(tombstone).ShouldBe(new Snapshot(
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+    }
+
+    [Fact]
+    public async Task A_delete_delivered_before_anything_else_still_holds()
+    {
+        var (id, owner) = NewApplication();
+
+        // Delivery is unordered, so the deletion can be the first thing this module
+        // ever hears about an application. It inserts the tombstone rather than
+        // needing a row to be there already, and the history behind it never lands.
+        await ApplyAsync(new ApplicationDeleted(Guid.CreateVersion7(), id, owner, T3));
+
+        foreach (var occurrence in HistoryFor(id, owner))
+        {
+            await ApplyAsync(occurrence);
+        }
+
+        (await IsVisibleAsync(id)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Redelivering_the_delete_changes_nothing()
+    {
+        var (id, owner) = NewApplication();
+        await ApplyAsync(new ApplicationSubmitted(
+            Guid.CreateVersion7(), id, owner, OpenedCampaign, Company,
+            new DateOnly(2026, 3, 1), "Referral", "Remote", T1));
+
+        var deletion = new ApplicationDeleted(Guid.CreateVersion7(), id, owner, T2);
+        await ApplyAsync(deletion);
+        await ApplyAsync(deletion);
+
+        // Monotone: an application is not deleted for the first time twice, so the
+        // instant is merged with LEAST and needs no watermark of its own.
+        (await RawFactsAsync(id)).ShouldNotBeNull().DeletedAt.ShouldBe(T2);
+    }
+
+    [Fact]
+    public async Task A_second_delete_at_a_later_instant_keeps_the_first()
+    {
+        var (id, owner) = NewApplication();
+        await ApplyAsync(new ApplicationDeleted(Guid.CreateVersion7(), id, owner, T2));
+        await ApplyAsync(new ApplicationDeleted(Guid.CreateVersion7(), id, owner, T3));
+
+        (await RawFactsAsync(id)).ShouldNotBeNull().DeletedAt.ShouldBe(T2);
+    }
+
+    [Fact]
+    public async Task One_applications_deletion_leaves_its_neighbours_alone()
+    {
+        var owner = UserId.New();
+        var deleted = Guid.CreateVersion7();
+        var kept = Guid.CreateVersion7();
+
+        foreach (var id in new[] { deleted, kept })
+        {
+            await ApplyAsync(new ApplicationSubmitted(
+                Guid.CreateVersion7(), id, owner, OpenedCampaign, Company,
+                new DateOnly(2026, 3, 1), "Referral", "Remote", T1));
+        }
+
+        await ApplyAsync(new ApplicationDeleted(Guid.CreateVersion7(), deleted, owner, T2));
+
+        (await IsVisibleAsync(deleted)).ShouldBeFalse();
+        (await IsVisibleAsync(kept)).ShouldBeTrue();
+    }
+
     // ----------------------------------------------------------------- helpers
 
     private static (Guid Id, UserId Owner) NewApplication() => (Guid.CreateVersion7(), UserId.New());
@@ -570,6 +705,7 @@ public sealed class AnalyticsProjectionTests(ApiFixture fixture)
             ApplicationReopened e => new ApplicationReopenedProjection(writer).HandleAsync(e, Ct),
             ApplicationMovedToCampaign e => new ApplicationMovedToCampaignProjection(writer).HandleAsync(e, Ct),
             InterviewScheduled e => new InterviewScheduledProjection(writer).HandleAsync(e, Ct),
+            ApplicationDeleted e => new ApplicationDeletedProjection(writer).HandleAsync(e, Ct),
             _ => throw new ArgumentOutOfRangeException(nameof(integrationEvent)),
         };
 
@@ -584,6 +720,31 @@ public sealed class AnalyticsProjectionTests(ApiFixture fixture)
         return await db.ApplicationFacts
             .AsNoTracking()
             .SingleAsync(f => f.ApplicationId == applicationId, Ct);
+    }
+
+    /// <summary>
+    /// The row as it really is, tombstone and all. Every other read here goes
+    /// through the query filter, which is the point - so proving what a tombstoned
+    /// row holds needs a way past it.
+    /// </summary>
+    private async Task<ApplicationFacts?> RawFactsAsync(Guid applicationId)
+    {
+        using var scope = fixture.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AnalyticsDbContext>();
+
+        return await db.ApplicationFacts
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .SingleOrDefaultAsync(f => f.ApplicationId == applicationId, Ct);
+    }
+
+    /// <summary>Whether any read in this module can still see the application.</summary>
+    private async Task<bool> IsVisibleAsync(Guid applicationId)
+    {
+        using var scope = fixture.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AnalyticsDbContext>();
+
+        return await db.ApplicationFacts.AnyAsync(f => f.ApplicationId == applicationId, Ct);
     }
 
     private async Task<ApplicationFacts> WaitForFactsAsync(

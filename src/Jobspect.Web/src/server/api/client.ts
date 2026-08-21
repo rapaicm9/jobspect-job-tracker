@@ -201,8 +201,19 @@ export function toResult<T>(outcome: {
 }): ApiResult<T> {
   const { data, error, response } = outcome;
 
-  if (response.ok && data !== undefined) {
-    return { ok: true, data };
+  if (response.ok) {
+    // A 204 is a success carrying nothing, and it has to be told apart from a
+    // body that failed to arrive - the same `data === undefined` means "there
+    // was never anything here" in one case and "something went wrong parsing
+    // it" in the other. Classifying by status is the only way to know which,
+    // and getting it wrong reads as a mysterious failure on a call that worked.
+    if (response.status === 204) {
+      return { ok: true, data: undefined as T };
+    }
+
+    if (data !== undefined) {
+      return { ok: true, data };
+    }
   }
 
   const body = isProblemBody(error) ? error : null;

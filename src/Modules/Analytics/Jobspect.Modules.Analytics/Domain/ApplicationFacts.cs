@@ -199,6 +199,34 @@ internal sealed class ApplicationFacts
     public DateTimeOffset? FirstInterviewScheduledAt { get; set; }
 
     /// <summary>
+    /// When the application was deleted, and the reason this row survives its
+    /// subject. A tombstone: the fact columns are cleared with it, so what is left
+    /// says only that an application by this id existed and is gone.
+    /// <para>
+    /// <b>The row cannot simply be deleted, and that is the whole design here.</b>
+    /// Every projection is an upsert on the key, so any event for this application
+    /// arriving after the delete would insert the row straight back - and the one
+    /// that lands late is precisely the one that failed and is being retried. A
+    /// resurrected row counts as an application forever, silently, in a read model
+    /// with nothing to rebuild from. The tombstone occupies the key so the conflict
+    /// path is always taken, and each writer refuses to update a row that has one.
+    /// </para>
+    /// <para>
+    /// Monotone, like the reached-at columns above and for the same reason: an
+    /// application is not deleted for the first time twice. Written with
+    /// <c>LEAST</c>, so it needs no watermark and neither redelivery nor arrival
+    /// order can disturb it.
+    /// </para>
+    /// <para>
+    /// Every read excludes these rows through a query filter on the entity, so a
+    /// figure is aggregated over live applications without any handler remembering
+    /// to say so. Erasure is the one path that must see them - see
+    /// <c>AnalyticsDataErasureHandler</c>.
+    /// </para>
+    /// </summary>
+    public DateTimeOffset? DeletedAt { get; set; }
+
+    /// <summary>
     /// When this row first appeared. Operational only - for answering "when did
     /// this show up" while debugging a projection - and <b>never</b> an input to a
     /// figure. A row records when each fact was true, not when it was received, and

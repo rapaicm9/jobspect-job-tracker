@@ -423,6 +423,10 @@ internal static class ApiClient
         return client.SendAsync(request);
     }
 
+    public static Task<HttpResponseMessage> DeleteApplicationAsync(
+        this HttpClient client, string? accessToken, Guid id) =>
+        client.SendAsync(Authorized(HttpMethod.Delete, $"/api/v1/applications/{id}", accessToken));
+
     public static Task<HttpResponseMessage> CreateContactAsync(this HttpClient client, string? accessToken, object body)
     {
         var request = Authorized(HttpMethod.Post, "/api/v1/contacts", accessToken);
