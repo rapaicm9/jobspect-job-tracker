@@ -44,10 +44,18 @@ export function parseTheme(value: string | null | undefined): Theme {
 }
 
 /**
- * The class the root element carries. Dark is what the tokens paint with nothing
- * set, so it names no class of its own - an empty string here and a `.light`
- * block in the token file are the same decision seen from two sides.
+ * The class the root element carries.
+ *
+ * Both themes name themselves. Dark could have been the absence of a class,
+ * since the token file paints it from a bare `:root` anyway - but then the
+ * `dark:` variant has to select "not light", and a variant defined by absence
+ * is one every CSS pipeline has to be trusted to compile the same way. Naming
+ * both keeps that selector the plain `.dark` one this project already had
+ * working, and keeps an empty string out of the class list.
+ *
+ * The bare `:root` still carries the dark values, so a document that renders
+ * without this class somehow is dark rather than unstyled.
  */
-export function themeClass(theme: Theme): string {
-  return theme === "light" ? "light" : "";
+export function themeClass(theme: Theme): Theme {
+  return theme;
 }

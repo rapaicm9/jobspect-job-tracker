@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import localFont from "next/font/local";
 
 import { parseTheme, THEME_COOKIE, themeClass } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 
 import "./globals.css";
 
@@ -37,10 +38,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value);
 
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${themeClass(theme)} h-full antialiased`.trim()}
-    >
+    <html lang="en" className={cn(geistSans.variable, themeClass(theme), "h-full antialiased")}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

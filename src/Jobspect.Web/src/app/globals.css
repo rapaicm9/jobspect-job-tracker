@@ -3,14 +3,13 @@
 @import "shadcn/tailwind.css";
 @import "../styles/tokens.css";
 
-/* Dark is the default, so this applies by absence rather than by match: every
-   `dark:` utility is live unless the light opt-in is set on the root element.
-   Naming the negative is what keeps the variant and the token file agreeing —
-   both are now keyed on `.light` and nothing else. `:where` around the `:not`
-   keeps the specificity at zero, so a `dark:` utility still loses to a later
-   one the way an ordinary utility does. */
+/* The root element always names its theme, so this stays the plain positive
+   match it has always been. An earlier version of this file selected by absence
+   — "dark applies unless `.light` is set" — which is the same thing on paper and
+   asks the CSS pipeline to compile a nested `:not()` with a selector list
+   identically in every mode. Not worth finding out. */
 @custom-variant dark {
-  &:where(:not(.light, .light *)) {
+  &:where(.dark, .dark *) {
     @slot;
   }
 }
