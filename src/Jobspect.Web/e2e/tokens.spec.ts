@@ -55,6 +55,8 @@ const NAMES = [
   "--primary-foreground",
   "--border",
   "--border-strong",
+  "--chart-series",
+  "--chart-neutral",
   ...STAGES.flatMap((s) => [`--stage-${s}`, `--stage-${s}-surface`, `--stage-${s}-foreground`]),
   ...OUTCOMES.flatMap((o) => [
     `--outcome-${o}`,
@@ -115,6 +117,26 @@ test("every chip reads against its own surface", async ({ page }) => {
     // The identity colour is a non-text mark: dots, chart series, chip borders.
     expect(contrast(t[`--${name}`], t["--background"]), `${name} mark`).toBeGreaterThanOrEqual(3);
   }
+});
+
+test("both chart slots are legible marks and tell each other apart", async ({ page }) => {
+  await page.goto("/");
+  const t = await readTokens(page, NAMES);
+
+  // Chart marks are non-text, so 3:1 against the page is the floor they answer
+  // to - the same one the stage and outcome identity colours clear above.
+  expect(contrast(t["--chart-series"], t["--background"]), "series mark").toBeGreaterThanOrEqual(3);
+  expect(contrast(t["--chart-neutral"], t["--background"]), "neutral mark").toBeGreaterThanOrEqual(
+    3,
+  );
+
+  // The neutral stands for "not recorded" and shares a chart with Withdrawn,
+  // which is near-neutral by decision. Nothing else in the palette is at risk of
+  // colliding with it, and that pair is, so it is the one asserted.
+  expect(
+    contrast(t["--chart-neutral"], t["--outcome-withdrawn"]),
+    "not-recorded vs Withdrawn",
+  ).toBeGreaterThanOrEqual(1.4);
 });
 
 test("the stage ramp is ordered and the outcome scale is not", async ({ page }) => {

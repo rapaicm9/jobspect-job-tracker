@@ -140,13 +140,19 @@
   --outcome-ghosted-surface: oklch(0.3 0.06 75);
   --outcome-ghosted-foreground: oklch(0.698 0.14 75);
 
-  /* Provisional. The charts inherit the palette and the consolidation session
-     before analytics settles them against real data. */
-  --chart-1: var(--teal-400);
-  --chart-2: var(--blue-400);
-  --chart-3: var(--amber-400);
-  --chart-4: var(--green-400);
-  --chart-5: var(--slate-400);
+  /* Two slots, not five, because most chart marks in this product already have
+     a colour: a funnel bar is the stage it counts and an outcome breakdown is
+     the outcome it counts, so they read --stage-* and --outcome-* and a mark
+     matches that value's chip everywhere else on the screen. What is left over
+     is a series that is neither - the weekly trend line, a breakdown by source
+     or work mode, whose categories are labelled on the bar rather than keyed to
+     a colour - and the marks that stand for an absence.
+
+     The neutral carries no chroma at all, which is what separates it from
+     Withdrawn: that outcome is deliberately near-neutral, and "not recorded"
+     sits beside it in the same chart. */
+  --chart-series: var(--teal-400);
+  --chart-neutral: oklch(0.52 0 0);
 }
 
 /* ------------------------------------------------ layer 2, light opt-in  */
@@ -212,11 +218,8 @@
   --outcome-ghosted-surface: oklch(0.947 0.043 75);
   --outcome-ghosted-foreground: oklch(0.51 0.108 75);
 
-  --chart-1: var(--teal-600);
-  --chart-2: var(--blue-600);
-  --chart-3: var(--amber-600);
-  --chart-4: var(--green-600);
-  --chart-5: var(--slate-600);
+  --chart-series: var(--teal-600);
+  --chart-neutral: oklch(0.62 0 0);
 }
 
 /* ------------------------------------------------- layer 2, non-colour  */
