@@ -5,6 +5,7 @@ import {
   ActivityTimeline,
   ContactsPanel,
   CustomFieldPanel,
+  DeleteApplicationButton,
   DetailFacts,
   DetailHeader,
   DetailQueryProvider,
@@ -88,11 +89,18 @@ export default async function ApplicationDetailPage({
           application={application}
           campaignId={scope}
           actions={
-            <TransitionMenu
-              applicationId={application.id}
-              advanceTo={moves.advanceTo}
-              closeAs={moves.closeAs}
-            />
+            <div className="flex items-center gap-2">
+              <TransitionMenu
+                applicationId={application.id}
+                advanceTo={moves.advanceTo}
+                closeAs={moves.closeAs}
+              />
+              <DeleteApplicationButton
+                applicationId={application.id}
+                role={application.role}
+                campaignId={scope}
+              />
+            </div>
           }
         />
 

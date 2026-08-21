@@ -168,7 +168,12 @@ test.describe("editing a contact", () => {
     await openTheApplication(page, [CONTACT]);
 
     // There is no DELETE on this resource, so the panel must never grow one.
-    await expect(page.getByRole("button", { name: /delete|remove/i })).toHaveCount(0);
+    // Scoped to the panel rather than the page: the application itself now has
+    // a delete in the header, and a page-wide count would read that as this
+    // panel growing one.
+    await expect(
+      page.getByRole("list", { name: "Contacts" }).getByRole("button", { name: /delete|remove/i }),
+    ).toHaveCount(0);
   });
 });
 

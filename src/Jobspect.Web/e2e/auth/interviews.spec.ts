@@ -164,7 +164,15 @@ test.describe("editing a round", () => {
 
     // There is no DELETE on this resource. Calling a round off is an outcome of
     // Cancelled, which is also what retracts its reminders.
-    await expect(page.getByRole("button", { name: /delete|remove|cancel round/i })).toHaveCount(0);
+    //
+    // Scoped to the panel rather than the page: the application itself now has
+    // a delete in the header, and a page-wide count would read that as this
+    // panel growing one.
+    await expect(
+      page
+        .getByRole("list", { name: "Interviews" })
+        .getByRole("button", { name: /delete|remove|cancel round/i }),
+    ).toHaveCount(0);
     await page.getByRole("button", { name: /^Edit interview on/ }).click();
     await expect(page.getByRole("dialog")).toContainText("Cancelled is how a round is called off");
   });

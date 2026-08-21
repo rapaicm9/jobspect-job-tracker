@@ -222,5 +222,26 @@ for (const colorScheme of ["light", "dark"] as const) {
         "axe found violations on the application detail",
       ).toEqual([]);
     });
+
+    test("the delete confirmation has none while it is open", async ({ page }) => {
+      // The only control in the product that destroys something, and a sweep of
+      // either screen at rest sees the trigger but never the dialog behind it.
+      const email = anEmail();
+      await registerThroughTheForm(page, email);
+      await seedApplications(email, [
+        { id: DETAIL_ID, role: "Frontend Engineer", companyName: "Acme" },
+      ]);
+      await page.goto("/applications");
+
+      await page.getByRole("button", { name: "Delete Frontend Engineer" }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+
+      const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
+
+      expect(
+        violations.map((v) => `${v.id} (${v.nodes.length}): ${v.help}`),
+        "axe found violations with the delete confirmation open",
+      ).toEqual([]);
+    });
   });
 }

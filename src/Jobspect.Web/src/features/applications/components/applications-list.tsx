@@ -3,7 +3,7 @@
 // The list owns client state for one reason §5 names: pages 2..n arrive after
 // the render that produced page 1, and a keyset walk has to accumulate.
 
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/ui/button";
@@ -68,6 +68,35 @@ export function ApplicationsList({ filters, preferences, initialPage }: Applicat
     void queryClient.resetQueries({ queryKey });
   }, [error, queryClient, queryKey]);
 
+  /**
+   * Takes a deleted row out of the walk.
+   *
+   * The action revalidating `/applications` cannot do this. The pages here were
+   * seeded once from the server's first page and accumulated by the browser
+   * after it; a query already holding data ignores a fresh `initialData`, so a
+   * re-render leaves the deleted row exactly where it was. Whoever owns the
+   * cache repairs the cache.
+   *
+   * The row is dropped rather than the walk restarted. A reset would refetch
+   * every page the reader has loaded and scroll them back to the top, which is a
+   * heavy answer to one row going - and the cursors stay valid, because a keyset
+   * walk is positioned by the last row it returned rather than by an offset that
+   * a delete would shift.
+   */
+  const removeRow = (id: string) => {
+    queryClient.setQueryData<InfiniteData<Page, string | null>>(queryKey, (current) =>
+      current === undefined
+        ? current
+        : {
+            ...current,
+            pages: current.pages.map((page) => ({
+              ...page,
+              rows: page.rows.filter((row) => row.id !== id),
+            })),
+          },
+    );
+  };
+
   const rows = data.pages.flatMap((page) => page.rows);
 
   if (rows.length === 0) {
@@ -83,8 +112,8 @@ export function ApplicationsList({ filters, preferences, initialPage }: Applicat
 
   return (
     <>
-      <ApplicationsTable rows={rows} preferences={preferences} />
-      <ApplicationCards rows={rows} preferences={preferences} />
+      <ApplicationsTable rows={rows} preferences={preferences} onDeleted={removeRow} />
+      <ApplicationCards rows={rows} preferences={preferences} onDeleted={removeRow} />
 
       <LoadMore
         // Remounted when the filters change, which is what gives a new walk its

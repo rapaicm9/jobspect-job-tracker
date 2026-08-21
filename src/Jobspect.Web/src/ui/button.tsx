@@ -17,6 +17,15 @@ const buttonVariants = cva(
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+        // The tinted variant above is a low-emphasis trigger and reads as one.
+        // This is the button that actually does the thing, and it exists because
+        // the tint cannot be made to work on a raised surface: destructive text
+        // on the dialog's own background measures 4.41:1 in dark, short of 4.5,
+        // and thinning the tint further only walks it toward that same number.
+        // Solid takes the foreground token instead, which is contrast-safe in
+        // both themes by construction.
+        destructiveSolid:
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

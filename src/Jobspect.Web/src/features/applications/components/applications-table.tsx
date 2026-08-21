@@ -7,6 +7,7 @@ import type { ApplicationRow } from "../to-application-row";
 import { isColumnVisible, type ViewPreferences } from "../view-preferences";
 
 import { ApplicationLink } from "./application-link";
+import { DeleteRowButton } from "./delete-row-button";
 import { StageChip } from "./stage-chip";
 
 /** A cell the API had nothing for. The dash is for the eye; a blank cell already
@@ -27,13 +28,15 @@ function DateCell({ value }: { value: string | null }) {
 export interface ApplicationsTableProps {
   rows: ApplicationRow[];
   preferences: ViewPreferences;
+  /** Called once a row's delete has been confirmed by the server. */
+  onDeleted: (id: string) => void;
 }
 
 /**
  * The wide layout. Its narrow counterpart renders the same rows as cards, and
  * CSS picks exactly one - so only one is ever in the accessibility tree.
  */
-export function ApplicationsTable({ rows, preferences }: ApplicationsTableProps) {
+export function ApplicationsTable({ rows, preferences, onDeleted }: ApplicationsTableProps) {
   const showWorkMode = isColumnVisible(preferences, "workMode");
   const showLocation = isColumnVisible(preferences, "location");
 
@@ -56,6 +59,12 @@ export function ApplicationsTable({ rows, preferences }: ApplicationsTableProps)
             <TableHead scope="col">Compensation</TableHead>
             {showWorkMode && <TableHead scope="col">Work mode</TableHead>}
             {showLocation && <TableHead scope="col">Location</TableHead>}
+            {/* Named for a screen reader even though the column shows nothing:
+                a header cell with no accessible name leaves the cells under it
+                announced against an empty string. */}
+            <TableHead scope="col">
+              <span className="sr-only">Actions</span>
+            </TableHead>
           </TableRow>
         </TableHeader>
 
@@ -86,6 +95,20 @@ export function ApplicationsTable({ rows, preferences }: ApplicationsTableProps)
               </TableCell>
               {showWorkMode && <TableCell>{row.workMode ?? <Absent />}</TableCell>}
               {showLocation && <TableCell>{row.location ?? <Absent />}</TableCell>}
+              {/* `py-0`, or this cell decides the row height. A 28px control
+                  inside the default 8px vertical padding needs 44px, which is
+                  exactly the comfortable row - so compact would stop being
+                  shorter than comfortable and the density control would appear
+                  to do nothing. The button still fits the 32px compact row. */}
+              <TableCell className="py-0 text-right">
+                <DeleteRowButton
+                  applicationId={row.id}
+                  role={row.role}
+                  onDeleted={() => {
+                    onDeleted(row.id);
+                  }}
+                />
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>

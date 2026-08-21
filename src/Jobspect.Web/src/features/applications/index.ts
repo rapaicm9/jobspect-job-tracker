@@ -7,6 +7,7 @@ export { ApplicationsBrowser } from "./components/applications-browser";
 export { CreateApplicationForm } from "./components/create-application-form";
 export { ContactsPanel } from "./components/contacts-panel";
 export { CustomFieldPanel } from "./components/custom-field-panel";
+export { DeleteApplicationButton } from "./components/delete-application-button";
 export { DetailFacts } from "./components/detail-facts";
 export { DetailHeader } from "./components/detail-header";
 export { DetailQueryProvider } from "./components/detail-query-provider";
