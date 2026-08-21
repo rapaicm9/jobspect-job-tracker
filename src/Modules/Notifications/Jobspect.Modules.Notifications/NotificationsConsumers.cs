@@ -3,6 +3,7 @@ using Jobspect.Modules.Applications.Contracts;
 using Jobspect.Modules.Identity.Contracts;
 using Jobspect.Modules.Notifications.Features.ArmReminders;
 using Jobspect.Modules.Notifications.Features.EraseData;
+using Jobspect.Modules.Notifications.Features.ForgetApplication;
 using Jobspect.Modules.Notifications.Features.RetractReminders;
 using Jobspect.Modules.Notifications.Features.TrackApplications;
 using Microsoft.Extensions.DependencyInjection;
@@ -63,6 +64,11 @@ public static class NotificationsConsumers
         builder.Services.AddEventHandler<ApplicationStageChanged, ApplicationStageChangedRetraction>();
         builder.Services.AddEventHandler<ApplicationReachedTerminal, ApplicationReachedTerminalRetraction>();
         builder.Services.AddEventHandler<InterviewCancelled, InterviewCancelledRetraction>();
+
+        // And the one that is not a retraction at all: the application itself is
+        // gone, so what this module kept about it is deleted rather than cancelled.
+        // A cancelled reminder still sits in the feed pointing at something.
+        builder.Services.AddEventHandler<ApplicationDeleted, ApplicationDeletedHandler>();
 
         // And gives it all back on the way out: this module's share of the erasure
         // fan-out, from its own schema only. Registered last here, and after the
