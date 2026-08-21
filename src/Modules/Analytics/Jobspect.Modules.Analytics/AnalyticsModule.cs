@@ -63,6 +63,11 @@ public static class AnalyticsModule
         builder.Services.AddEventHandler<ApplicationMovedToCampaign, ApplicationMovedToCampaignProjection>();
         builder.Services.AddEventHandler<InterviewScheduled, InterviewScheduledProjection>();
 
+        // And the one that unmakes a row rather than filling it in. It is an upsert
+        // like the rest, which is what keeps a late event from putting the
+        // application back - see ApplicationFacts.DeletedAt.
+        builder.Services.AddEventHandler<ApplicationDeleted, ApplicationDeletedProjection>();
+
         // And gives it all back on the way out: this module's share of the erasure
         // fan-out, from its own schema only.
         builder.Services.AddEventHandler<UserDataDeletionRequested, AnalyticsDataErasureHandler>();

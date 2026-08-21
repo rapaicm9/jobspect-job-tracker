@@ -36,7 +36,12 @@ internal sealed class AnalyticsDataErasureHandler(AnalyticsDbContext dbContext)
     {
         var ownerId = integrationEvent.OwnerId;
 
+        // Past the query filter, which hides the tombstone a deleted application
+        // leaves behind. Those rows are the one thing here that would otherwise
+        // survive an erasure: keyed to the user, excluded from every figure, and so
+        // out of sight of anything else that might have noticed them.
         await dbContext.ApplicationFacts
+            .IgnoreQueryFilters()
             .Where(facts => facts.OwnerId == ownerId)
             .ExecuteDeleteAsync(cancellationToken);
 
