@@ -10,6 +10,7 @@ using Jobspect.Modules.Applications.Features.CreateCampaign;
 using Jobspect.Modules.Applications.Features.CreateContact;
 using Jobspect.Modules.Applications.Features.CreateCustomField;
 using Jobspect.Modules.Applications.Features.CreateInterview;
+using Jobspect.Modules.Applications.Features.DeleteApplication;
 using Jobspect.Modules.Applications.Features.DeleteCampaign;
 using Jobspect.Modules.Applications.Features.EraseData;
 using Jobspect.Modules.Applications.Features.ExportData;
@@ -106,6 +107,7 @@ public static class ApplicationsModule
         builder.Services.AddScoped<ListApplicationsHandler>();
         builder.Services.AddScoped<UpdateApplicationHandler>();
         builder.Services.AddScoped<TransitionApplicationHandler>();
+        builder.Services.AddScoped<DeleteApplicationHandler>();
 
         builder.Services.AddScoped<ContactLinkGuard>();
         builder.Services.AddScoped<CreateContactHandler>();
@@ -151,7 +153,8 @@ public static class ApplicationsModule
             .Register<ApplicationDeadlineSet>()
             .Register<OfferDecisionDeadlineSet>()
             .Register<InterviewScheduled>()
-            .Register<InterviewCancelled>();
+            .Register<InterviewCancelled>()
+            .Register<ApplicationDeleted>();
 
     /// <summary>
     /// Maps the Applications module's authenticated slices onto the host's
@@ -172,6 +175,7 @@ public static class ApplicationsModule
         GetApplicationEndpoint.Map(applications);
         UpdateApplicationEndpoint.Map(applications);
         TransitionApplicationEndpoint.Map(applications);
+        DeleteApplicationEndpoint.Map(applications);
 
         var contacts = api.MapGroup("/contacts");
         ListContactsEndpoint.Map(contacts);

@@ -12,10 +12,13 @@ namespace Jobspect.Modules.Applications.Features.DeleteCampaign;
 /// applications to the default first. Another user's campaign is a 404; the default
 /// is a 409.
 /// <para>
-/// The module's only delete, and the only entity here that can have one. A contact,
-/// an interview, a custom field or an application all hold something the user wrote,
-/// so they are retired rather than removed; a campaign holds only the grouping, and
-/// deleting it costs nothing that cannot be recreated by making another.
+/// The cheapest delete in the module, and the only one that costs nothing: a
+/// campaign holds the grouping and none of the content, so removing it can be
+/// undone by making another. A contact, an interview and a custom field all hold
+/// something the user wrote and are retired rather than removed. An application
+/// holds the most of all and can still be deleted outright - see
+/// <c>DeleteApplicationEndpoint</c> - because the alternative there was hiding a
+/// row the user asked to be rid of.
 /// </para>
 /// <para>
 /// Not gated, and deliberately: this is how an account that has lost the entitlement
