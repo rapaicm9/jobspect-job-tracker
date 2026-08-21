@@ -58,9 +58,110 @@
   --amber-600: oklch(0.64 0.135 75);
 }
 
-/* ------------------------------------------------------- layer 2, light  */
+/* -------------------------------------------------------- layer 2, dark  */
 
+/* Dark is the product's default and wins over the system setting: a visitor
+   whose OS asks for light still gets this, because this is the ground the
+   palette was drawn against and the brand's dark end is the page itself.
+   Light is the opt-in below. */
 :root {
+  --background: var(--ink-900);
+  --foreground: var(--ink-50);
+  /* 1.22:1 above the page — enough to read as a raised surface, close enough
+     that a card with no border has effectively no edge. That is what makes
+     --border-strong load-bearing rather than decorative down here. */
+  --card: var(--ink-850);
+  --card-foreground: var(--ink-50);
+  --popover: var(--ink-850);
+  --popover-foreground: var(--ink-50);
+
+  --primary: var(--teal-400);
+  --primary-foreground: var(--ink-950);
+  /* One step clear of --muted, and the gap is the point rather than the
+     brightness. --secondary says "this one is selected" - the nav's current
+     destination, the palette's highlighted row, a pressed filter - and --muted
+     is what those same controls paint on hover. Sharing a value made hovering
+     an unselected filter indistinguishable from selecting it. */
+  --secondary: var(--ink-700);
+  --secondary-foreground: var(--ink-50);
+  --muted: var(--ink-800);
+  --muted-foreground: var(--ink-400);
+
+  /* Neutral, not amber. An earlier draft made the accent a saturated amber a
+     hair from Ghosted and resolved the collision with a usage rule; a neutral
+     hover tint means the collision cannot arise at all. Amber survives as the
+     Ghosted outcome, where it carries meaning. */
+  --accent: var(--ink-800);
+  --accent-foreground: var(--ink-50);
+
+  --destructive: var(--red-400);
+  --destructive-foreground: var(--ink-950);
+
+  /* Two borders, and the difference matters. --border is a divider and is
+     exempt from WCAG 1.4.11; --border-strong clears 3:1 and is what identifies
+     a control. Putting the subtle one on a text input is the usual way a
+     design system fails 1.4.11 while looking tidy. */
+  --border: var(--ink-800);
+  --border-strong: var(--ink-550);
+  --input: var(--ink-550);
+  --ring: var(--teal-400);
+
+  /* Stages: ordered, so the scale is sequential. Each has an identity colour
+     for dots, chart marks and chip borders, plus a chip surface and the text
+     colour that sits on it. On a dark ground deepening recedes, so the ramp
+     runs the other way and progression reads as brightening — the invariant is
+     "further along is visually heavier", not a fixed lightness direction. */
+  --stage-applied: var(--blue-700);
+  --stage-applied-surface: oklch(0.255 0.06 258);
+  --stage-applied-foreground: oklch(0.658 0.14 258);
+  --stage-screening: var(--blue-500);
+  --stage-screening-surface: oklch(0.288 0.06 258);
+  --stage-screening-foreground: oklch(0.685 0.14 258);
+  --stage-interview: var(--blue-400);
+  --stage-interview-surface: oklch(0.321 0.06 258);
+  --stage-interview-foreground: oklch(0.716 0.14 258);
+  --stage-offer: var(--blue-300);
+  --stage-offer-surface: oklch(0.354 0.06 258);
+  --stage-offer-foreground: oklch(0.75 0.129 258);
+
+  /* Outcomes: unordered, so the scale is categorical and every chip surface
+     sits at one lightness. A lightness difference here would imply a rank the
+     domain does not have. */
+  --outcome-accepted: var(--green-400);
+  --outcome-accepted-surface: oklch(0.3 0.06 152);
+  --outcome-accepted-foreground: oklch(0.685 0.14 152);
+  --outcome-rejected: var(--red-400);
+  --outcome-rejected-surface: oklch(0.3 0.06 25);
+  --outcome-rejected-foreground: oklch(0.704 0.14 25);
+  --outcome-withdrawn: var(--slate-400);
+  --outcome-withdrawn-surface: oklch(0.3 0.022 255);
+  --outcome-withdrawn-foreground: oklch(0.694 0.022 255);
+  --outcome-ghosted: var(--amber-400);
+  --outcome-ghosted-surface: oklch(0.3 0.06 75);
+  --outcome-ghosted-foreground: oklch(0.698 0.14 75);
+
+  /* Two slots, not five, because most chart marks in this product already have
+     a colour: a funnel bar is the stage it counts and an outcome breakdown is
+     the outcome it counts, so they read --stage-* and --outcome-* and a mark
+     matches that value's chip everywhere else on the screen. What is left over
+     is a series that is neither - the weekly trend line, a breakdown by source
+     or work mode, whose categories are labelled on the bar rather than keyed to
+     a colour - and the marks that stand for an absence.
+
+     The neutral carries no chroma at all, which is what separates it from
+     Withdrawn: that outcome is deliberately near-neutral, and "not recorded"
+     sits beside it in the same chart. */
+  --chart-series: var(--teal-400);
+  --chart-neutral: oklch(0.52 0 0);
+}
+
+/* ------------------------------------------------ layer 2, light opt-in  */
+
+/* Reached only by `.light` on the root element, which nothing sets yet — the
+   settings screen is where it gets a control. `:root.light` outweighs the bare
+   `:root` above on specificity, so the order of the two blocks does not
+   matter. */
+:root.light {
   --background: var(--ink-50);
   --foreground: var(--ink-900);
   --card: oklch(1 0 0);
@@ -70,33 +171,27 @@
 
   --primary: var(--teal-600);
   --primary-foreground: oklch(1 0 0);
-  --secondary: var(--ink-100);
+  /* Two ramp steps here against one in dark, matched on the measured gap rather
+     than on the step count - the light end of the ramp is compressed, so
+     ink-200 would land at 1.14:1 from the hover tint where dark's one step
+     reaches 1.56:1. */
+  --secondary: var(--ink-300);
   --secondary-foreground: var(--ink-900);
   --muted: var(--ink-100);
   --muted-foreground: var(--ink-500);
-
-  /* Neutral, not amber. An earlier draft made the accent a saturated amber a
-     hair from Ghosted and resolved the collision with a usage rule; a neutral
-     hover tint means the collision cannot arise at all. Amber survives as the
-     Ghosted outcome, where it carries meaning. */
   --accent: var(--ink-100);
   --accent-foreground: var(--ink-900);
 
   --destructive: var(--red-600);
   --destructive-foreground: oklch(1 0 0);
 
-  /* Two borders, and the difference matters. --border is a divider and is
-     exempt from WCAG 1.4.11; --border-strong clears 3:1 and is what identifies
-     a control. Putting the subtle one on a text input is the usual way a
-     design system fails 1.4.11 while looking tidy. */
   --border: var(--ink-200);
   --border-strong: var(--ink-450);
   --input: var(--ink-450);
   --ring: var(--teal-600);
 
-  /* Stages: ordered, so the scale is sequential and deepens toward Offer.
-     Each has an identity colour for dots, chart marks and chip borders, plus a
-     chip surface and the text colour that sits on it. */
+  /* Deepening toward Offer, which is the direction that reads as heavier on a
+     light ground. */
   --stage-applied: var(--blue-500);
   --stage-applied-surface: oklch(0.968 0.015 258);
   --stage-applied-foreground: oklch(0.524 0.14 258);
@@ -110,9 +205,6 @@
   --stage-offer-surface: oklch(0.905 0.045 258);
   --stage-offer-foreground: oklch(0.48 0.14 258);
 
-  /* Outcomes: unordered, so the scale is categorical and every chip surface
-     sits at one lightness. A lightness difference here would imply a rank the
-     domain does not have. */
   --outcome-accepted: var(--green-600);
   --outcome-accepted-surface: oklch(0.947 0.045 152);
   --outcome-accepted-foreground: oklch(0.496 0.131 152);
@@ -126,85 +218,8 @@
   --outcome-ghosted-surface: oklch(0.947 0.043 75);
   --outcome-ghosted-foreground: oklch(0.51 0.108 75);
 
-  /* Provisional. The charts inherit the palette and the consolidation session
-     before analytics settles them against real data. */
-  --chart-1: var(--teal-600);
-  --chart-2: var(--blue-600);
-  --chart-3: var(--amber-600);
-  --chart-4: var(--green-600);
-  --chart-5: var(--slate-600);
-}
-
-/* -------------------------------------------------------- layer 2, dark  */
-
-/* System-driven. There is no toggle and no theme library: a toggle would need
-   a `.dark` block repeating these values and a blocking inline script to set
-   the class before first paint. The `dark` variant in globals.css already
-   matches `.dark`, so that day is additive. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: var(--ink-900);
-    --foreground: var(--ink-50);
-    /* 1.22:1 above the page — enough to read as a raised surface, close enough
-       that a card with no border has effectively no edge. That is what makes
-       --border-strong load-bearing rather than decorative down here. */
-    --card: var(--ink-850);
-    --card-foreground: var(--ink-50);
-    --popover: var(--ink-850);
-    --popover-foreground: var(--ink-50);
-
-    --primary: var(--teal-400);
-    --primary-foreground: var(--ink-950);
-    --secondary: var(--ink-800);
-    --secondary-foreground: var(--ink-50);
-    --muted: var(--ink-800);
-    --muted-foreground: var(--ink-400);
-    --accent: var(--ink-800);
-    --accent-foreground: var(--ink-50);
-
-    --destructive: var(--red-400);
-    --destructive-foreground: var(--ink-950);
-
-    --border: var(--ink-800);
-    --border-strong: var(--ink-550);
-    --input: var(--ink-550);
-    --ring: var(--teal-400);
-
-    /* The ramp runs the other way here. Deepening recedes into a dark ground,
-       so progression reads as brightening instead. The invariant is "further
-       along is visually heavier", not a fixed lightness direction. */
-    --stage-applied: var(--blue-700);
-    --stage-applied-surface: oklch(0.255 0.06 258);
-    --stage-applied-foreground: oklch(0.658 0.14 258);
-    --stage-screening: var(--blue-500);
-    --stage-screening-surface: oklch(0.288 0.06 258);
-    --stage-screening-foreground: oklch(0.685 0.14 258);
-    --stage-interview: var(--blue-400);
-    --stage-interview-surface: oklch(0.321 0.06 258);
-    --stage-interview-foreground: oklch(0.716 0.14 258);
-    --stage-offer: var(--blue-300);
-    --stage-offer-surface: oklch(0.354 0.06 258);
-    --stage-offer-foreground: oklch(0.75 0.129 258);
-
-    --outcome-accepted: var(--green-400);
-    --outcome-accepted-surface: oklch(0.3 0.06 152);
-    --outcome-accepted-foreground: oklch(0.685 0.14 152);
-    --outcome-rejected: var(--red-400);
-    --outcome-rejected-surface: oklch(0.3 0.06 25);
-    --outcome-rejected-foreground: oklch(0.704 0.14 25);
-    --outcome-withdrawn: var(--slate-400);
-    --outcome-withdrawn-surface: oklch(0.3 0.022 255);
-    --outcome-withdrawn-foreground: oklch(0.694 0.022 255);
-    --outcome-ghosted: var(--amber-400);
-    --outcome-ghosted-surface: oklch(0.3 0.06 75);
-    --outcome-ghosted-foreground: oklch(0.698 0.14 75);
-
-    --chart-1: var(--teal-400);
-    --chart-2: var(--blue-400);
-    --chart-3: var(--amber-400);
-    --chart-4: var(--green-400);
-    --chart-5: var(--slate-400);
-  }
+  --chart-series: var(--teal-600);
+  --chart-neutral: oklch(0.62 0 0);
 }
 
 /* ------------------------------------------------- layer 2, non-colour  */

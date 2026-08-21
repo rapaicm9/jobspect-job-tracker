@@ -133,6 +133,22 @@ function connect(): RedisCommands {
     // than outliving it.
     maxRetriesPerRequest: 1,
     connectTimeout: 2_000,
+
+    // The bound the two above do not provide, and the gap is the interesting one:
+    // `connectTimeout` covers opening a socket and `maxRetriesPerRequest` counts
+    // retries across reconnects, so both need the connection to have *failed*.
+    // A socket that is open and dead - the far side gone, an idle NAT mapping
+    // dropped, a paused container - fails neither test: the command is written,
+    // no reply ever comes, nothing reconnects, and the promise never settles.
+    // Every session read is on a render path, so that is a request hanging until
+    // the user gives up.
+    //
+    // The value is deliberately loose. Turning "never" into "eventually" is the
+    // whole of the fix and any finite number does that, while a tight one buys
+    // nothing and risks failing a session over a slow moment - this Redis has
+    // been seen to answer a health-check ping in 408ms, so the headroom here is
+    // about twelve times the worst observed latency rather than five.
+    commandTimeout: 5_000,
   });
 }
 

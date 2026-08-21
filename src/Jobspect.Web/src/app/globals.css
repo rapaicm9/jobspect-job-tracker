@@ -3,13 +3,12 @@
 @import "shadcn/tailwind.css";
 @import "../styles/tokens.css";
 
-/* Matches the media query the tokens flip under, and `.dark` as well. Nothing
-   sets that class today; when something does, the variant already works and
-   only the token block has to follow. */
+/* The root element always names its theme, so this stays the plain positive
+   match it has always been. An earlier version of this file selected by absence
+   — "dark applies unless `.light` is set" — which is the same thing on paper and
+   asks the CSS pipeline to compile a nested `:not()` with a selector list
+   identically in every mode. Not worth finding out. */
 @custom-variant dark {
-  @media (prefers-color-scheme: dark) {
-    @slot;
-  }
   &:where(.dark, .dark *) {
     @slot;
   }
@@ -77,11 +76,8 @@
   --color-outcome-ghosted-surface: var(--outcome-ghosted-surface);
   --color-outcome-ghosted-foreground: var(--outcome-ghosted-foreground);
 
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
+  --color-chart-series: var(--chart-series);
+  --color-chart-neutral: var(--chart-neutral);
 
   /* One typeface. No --font-mono: there is no monospace anywhere in the
      product UI, so a token for it would be an invitation. */
@@ -108,8 +104,14 @@
   html {
     @apply font-sans;
     /* Tells the UA to render form controls and scrollbars for the theme the
-       tokens are already painting. */
-    color-scheme: light dark;
+       tokens are already painting. A single keyword rather than `light dark`,
+       which would hand the choice back to the system setting the tokens no
+       longer consult. */
+    color-scheme: dark;
+  }
+
+  html.light {
+    color-scheme: light;
   }
 
   body {

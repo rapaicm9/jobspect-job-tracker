@@ -138,12 +138,28 @@ export function createRefresher(
    * is uncontested, recover.
    */
   async function waitForHolder(sid: string, staleToken: string): Promise<RefreshOutcome> {
+    // Two bounds, because the poll count alone is not a duration. Each poll costs
+    // a Redis read, so the loop takes `maxPolls * (interval + however long a read
+    // takes)` - and at the ~400ms this Redis has been seen to answer in under
+    // load, a budget meant to be six seconds becomes nearly a minute of somebody
+    // watching a spinner. The count keeps the loop finite when reads are instant;
+    // the deadline keeps it finite when they are not.
+    //
+    // `performance.now()` rather than the injected clock: that one jumps on
+    // purpose so a test can age a token, which makes it useless for measuring a
+    // real wait.
+    const deadline = performance.now() + waitBudgetMs;
+
     for (let poll = 0; poll < maxPolls; poll += 1) {
       await sleep(pollIntervalMs);
 
       const current = await store.read(sid);
       if (current === null) return { kind: "no-session" };
       if (current.accessToken !== staleToken) return { kind: "fresh", tokens: current };
+
+      // Checked after the read rather than before the sleep, so the wait always
+      // costs at least one look at the store.
+      if (performance.now() >= deadline) break;
     }
 
     return { kind: "unavailable" };

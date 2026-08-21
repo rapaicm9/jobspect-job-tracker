@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { LIGHT_PROJECT } from "./e2e/theme";
+
 const PORT = Number(process.env.PORT ?? 3100);
 const baseURL = `http://127.0.0.1:${PORT}`;
 
@@ -19,13 +21,13 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    // The token file flips on prefers-color-scheme, so dark is a second pass
-    // over the same specs rather than a separate suite.
-    {
-      name: "chromium-dark",
-      use: { ...devices["Desktop Chrome"], colorScheme: "dark" },
-    },
+    // Dark is what the product renders with nothing set, so it is the plain
+    // project. Light is the opt-in, and this second pass is what keeps its half
+    // of the palette from rotting while the settings control that reaches it is
+    // still unbuilt. `colorScheme` no longer selects either one — the tokens
+    // stopped consulting prefers-color-scheme — so e2e/theme.ts sets the class.
+    { name: "chromium-dark", use: { ...devices["Desktop Chrome"] } },
+    { name: LIGHT_PROJECT, use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: {
     // A production build, never the dev server: dev writes into the project

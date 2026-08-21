@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, expectTheme, LIGHT_PROJECT, test } from "./theme";
 
 // The palette was solved against contrast targets rather than picked by eye,
 // so the targets are worth asserting: a token edited to a nicer-looking value
@@ -47,11 +47,16 @@ const NAMES = [
   "--background",
   "--foreground",
   "--card",
+  "--muted",
   "--muted-foreground",
+  "--secondary",
+  "--secondary-foreground",
   "--primary",
   "--primary-foreground",
   "--border",
   "--border-strong",
+  "--chart-series",
+  "--chart-neutral",
   ...STAGES.flatMap((s) => [`--stage-${s}`, `--stage-${s}-surface`, `--stage-${s}-foreground`]),
   ...OUTCOMES.flatMap((o) => [
     `--outcome-${o}`,
@@ -59,6 +64,15 @@ const NAMES = [
     `--outcome-${o}-foreground`,
   ]),
 ];
+
+// Every floor below holds in both themes by construction, so a lane that had
+// quietly stopped applying its class would go on passing while testing dark
+// twice. This is the one assertion that can tell the two runs apart.
+test("the page renders the theme its project asked for", async ({ page }, testInfo) => {
+  await page.goto("/");
+
+  await expectTheme(page, testInfo.project.name === LIGHT_PROJECT ? "light" : "dark");
+});
 
 test("body text and UI boundaries clear their WCAG floors", async ({ page }) => {
   await page.goto("/");
@@ -74,6 +88,22 @@ test("body text and UI boundaries clear their WCAG floors", async ({ page }) => 
   expect(contrast(t["--border-strong"], t["--background"])).toBeGreaterThanOrEqual(3);
 });
 
+test("a selected control does not read as a hovered one", async ({ page }) => {
+  await page.goto("/");
+  const t = await readTokens(page, NAMES);
+
+  // --secondary marks the current nav item, the palette's highlighted row and a
+  // pressed filter; --muted is what those same controls paint on hover. The two
+  // held the same value once, which left hovering an unselected filter looking
+  // exactly like selecting it.
+  expect(contrast(t["--secondary"], t["--muted"]), "selected vs hover").toBeGreaterThanOrEqual(
+    1.25,
+  );
+
+  // It is still a surface with text on it.
+  expect(contrast(t["--secondary-foreground"], t["--secondary"])).toBeGreaterThanOrEqual(4.5);
+});
+
 test("every chip reads against its own surface", async ({ page }) => {
   await page.goto("/");
   const t = await readTokens(page, NAMES);
@@ -87,6 +117,26 @@ test("every chip reads against its own surface", async ({ page }) => {
     // The identity colour is a non-text mark: dots, chart series, chip borders.
     expect(contrast(t[`--${name}`], t["--background"]), `${name} mark`).toBeGreaterThanOrEqual(3);
   }
+});
+
+test("both chart slots are legible marks and tell each other apart", async ({ page }) => {
+  await page.goto("/");
+  const t = await readTokens(page, NAMES);
+
+  // Chart marks are non-text, so 3:1 against the page is the floor they answer
+  // to - the same one the stage and outcome identity colours clear above.
+  expect(contrast(t["--chart-series"], t["--background"]), "series mark").toBeGreaterThanOrEqual(3);
+  expect(contrast(t["--chart-neutral"], t["--background"]), "neutral mark").toBeGreaterThanOrEqual(
+    3,
+  );
+
+  // The neutral stands for "not recorded" and shares a chart with Withdrawn,
+  // which is near-neutral by decision. Nothing else in the palette is at risk of
+  // colliding with it, and that pair is, so it is the one asserted.
+  expect(
+    contrast(t["--chart-neutral"], t["--outcome-withdrawn"]),
+    "not-recorded vs Withdrawn",
+  ).toBeGreaterThanOrEqual(1.4);
 });
 
 test("the stage ramp is ordered and the outcome scale is not", async ({ page }) => {
