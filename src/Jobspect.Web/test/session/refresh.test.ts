@@ -16,6 +16,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Longer than the 5s lock TTL, so a holder that pauses this long has lost it. */
 const LOCK_OUTLIVED_MS = 6_000;
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const server = setupServer();
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
@@ -178,6 +180,36 @@ describe("losing the lock", () => {
     await store.destroy(sid);
 
     expect((await waiting).kind).toBe("no-session");
+  });
+});
+
+describe("waiting while the store is slow", () => {
+  it("gives up on the budget rather than on the poll count", async () => {
+    const sid = await store.create(expiringTokens());
+    await redis.set(lockKeyFor(sid), "someone-else", "PX", 5_000, "NX");
+
+    // The poll count is not a duration, because every poll costs a read. At this
+    // latency the hundred polls the budget allows would run for five seconds -
+    // which is how a six-second production budget was seen to keep a render
+    // waiting for the better part of a minute.
+    const slow: SessionStore = {
+      ...store,
+      read: async (id) => {
+        await sleep(50);
+        return store.read(id);
+      },
+    };
+
+    const startedAt = performance.now();
+    const outcome = await createRefresher(slow, redis, {
+      now,
+      pollIntervalMs: 1,
+      waitBudgetMs: 100,
+    }).ensureFresh(sid);
+    const elapsed = performance.now() - startedAt;
+
+    expect(outcome.kind).toBe("unavailable");
+    expect(elapsed).toBeLessThan(1_000);
   });
 });
 
