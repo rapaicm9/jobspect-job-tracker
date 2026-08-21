@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-08
+- **Amended:** 2026-08-21 — dark is the default rather than the system's choice, and light is an
+  opt-in carried by a cookie the server reads; the selected tint no longer shares a value with the
+  hover tint; the provisional chart slots are settled. See _Revision history_.
 
 ## Context
 
@@ -57,12 +60,42 @@ like a failure editorialises.
 Luminance gaps inside the outcome set run as tight as 1.09:1, so hue is doing the work and
 greyscale removes it — which is why marks are labelled directly rather than keyed to a legend.
 
+### The selected tint is a step clear of the hover tint
+
+`--secondary` carries one job across the whole client: _this one is selected_ — the navigation's
+current destination, the command palette's highlighted row, a pressed filter or density toggle.
+`--muted` is what those same controls paint on hover. The two originally held the same ramp step,
+which made hovering an unselected filter indistinguishable from selecting it: 1.00:1 apart in light
+and 1.18:1 in dark.
+
+They are now a step apart, and the step is sized on the measured gap rather than on the ramp. The
+light end of the neutral ramp is compressed, so one step there reaches 1.14:1 where one step in dark
+reaches 1.56:1 — light takes two steps to land in the same place.
+
 ### Two border tokens
 
 `--border` is a divider and exempt from WCAG 1.4.11. `--border-strong` clears 3:1 and is what
 identifies a control. Using the subtle one on a text input is the most common way a design system
 fails 1.4.11 while looking tidy. In dark mode this is load-bearing rather than decorative: the card
 and page surfaces sit 1.22:1 apart, so a card rendered without a border has effectively no edge.
+
+### Charts take their colour from the domain
+
+Most chart marks in this product already have a colour. A funnel bar _is_ the stage it counts and an
+outcome breakdown _is_ the outcome it counts, so those read `--stage-*` and `--outcome-*` directly
+and a mark matches that value's chip everywhere else on the same screen. There is no separate
+categorical chart ramp, and an earlier draft that declared five generic slots was aliasing the stage
+blue and three of the four outcome hues under different names — a funnel bar would have been a
+different blue from the Offer chip beside it, for no reason a reader could recover.
+
+Two slots remain, for what the domain does not colour:
+
+- `--chart-series`, the brand teal, for a series that is neither a stage nor an outcome — the weekly
+  trend line, and breakdowns by source or work mode, whose categories are labelled on the bar rather
+  than keyed to a colour.
+- `--chart-neutral`, for marks that stand for an absence: the "not recorded" slice and the weekly
+  goal's reference line. **It carries no chroma at all**, which is what keeps it clear of Withdrawn —
+  that outcome is near-neutral by decision and the two share a chart.
 
 ### Measured, not asserted
 
@@ -75,20 +108,41 @@ Every value was solved against a contrast target. Measured ratios:
 | primary on page                  | 4.94        | 8.52         |
 | `--border-strong` on page        | 3.00        | 3.07         |
 | card vs page                     | 1.05        | 1.22         |
+| selected vs hover tint           | 1.37        | 1.32         |
 | stage identity vs page           | 3.05 – 6.99 | 3.05 – 11.00 |
 | outcome identity vs page         | 3.29 – 6.52 | 5.47 – 10.68 |
 | chip text on chip surface        | 4.99 – 5.01 | 4.99 – 5.01  |
+| chart marks vs page              | 3.48 – 4.94 | 3.34 – 8.52  |
+| not-recorded vs Withdrawn        | 1.87        | 1.64         |
 | tightest outcome pair, greyscale | 1.14        | 1.09         |
 
 `e2e/tokens.spec.ts` asserts these floors in both themes, so a token edited to a nicer-looking
 value that drops below one fails the build rather than shipping.
 
-### Dark mode is system-driven
+### Dark is the default; light is an opt-in
 
-Tokens flip under `@media (prefers-color-scheme: dark)`. There is no toggle and no theme library:
-a toggle needs a `.dark` block repeating the values and a blocking inline script to set the class
-before first paint, and neither is worth carrying without a request for it. The `dark` variant
-already matches `.dark` as well as the media query, so adding one later is additive.
+**The bare `:root` carries the dark values and light lives under `:root.light`.** Nothing consults
+`prefers-color-scheme` — a visitor whose system asks for light still gets dark, because dark is the
+ground this palette was drawn against and the brand's dark end is the page itself. The `dark`
+variant follows the same key from the other side: it applies unless `.light` is set, so a `dark:`
+utility is live by absence rather than by match.
+
+**The class is server-rendered from a cookie**, read in the root layout. That is not a persistence
+convenience, it is the only correct placement: a class applied after first paint means the page
+paints dark and then changes, and every element carrying `transition-colors` animates through the
+gap — measured here at roughly 150ms during which the navigation links sat below 4.5:1, caught by
+the accessibility sweep at a different intermediate colour on each run.
+
+An earlier version of this record held that a toggle would need "a blocking inline script to set the
+class before first paint". It does not, and the reason is specific to this application: every page
+renders per request already, because the Content-Security-Policy is nonce-based. The class costs one
+cookie read and no script at all. **Nothing writes the cookie yet** — the settings screen is where
+it gets a control, and the test suites seed it meanwhile so the light palette stays exercised rather
+than becoming a set of values nothing can render.
+
+A third "follow the system" choice stays available without reopening this: it would add the light
+values under `@media (prefers-color-scheme: light)` scoped to a class of its own, leaving both
+blocks here untouched.
 
 ### Density, and the target-size collision
 
@@ -119,8 +173,12 @@ keyboard and pointer pass, not on the automated gate.
   unstyled. That is the intended signal, and it surfaces at review rather than in production.
 - `--font-mono` is deliberately absent: there is no monospace anywhere in the product UI, and a
   token for it would be an invitation.
-- The chart slots (`--chart-1` … `--chart-5`) are declared but **provisional**. They are settled
-  against real data before the analytics screens are built.
+- The chart slots are down to two, and both are asserted by the token suite despite having no
+  consumer yet — an unused token is exactly where a value drifts unnoticed.
+- Light mode is reachable only by a cookie nothing writes, so until the settings screen ships it is
+  the test suites that keep that half of the palette honest. The theme each suite rendered is
+  asserted, because every contrast floor here holds in both and a lane that stopped switching would
+  pass while checking dark twice.
 
 ## Alternatives considered
 
@@ -131,6 +189,38 @@ keyboard and pointer pass, not on the automated gate.
   outcome — about 3° of hue and 1.12:1 apart — and resolved the collision with a usage rule barring
   the accent from large fills next to an outcome chip. Replaced by a neutral hover tint, which means
   the collision cannot arise at all. Amber survives as Ghosted, where it carries meaning.
-- **A runtime theme toggle.** Deferred; see above.
+- **Following the system setting.** What this record originally decided, and overturned once the
+  screens existed: the palette is drawn for a dark ground and half the visitors were being handed
+  the other one by their operating system.
+- **Dropping light entirely.** Rejected. It costs nothing to keep behind a class, the values are
+  already solved, and deleting them means re-solving them the day somebody wants light.
+- **Applying the theme class in the browser** — an inline script, or a class set on mount. Rejected
+  on measurement rather than principle; see the transition finding above.
+- **Five generic chart colours, re-solved for mutual separation.** Rejected: it makes a funnel bar a
+  different colour from the stage chip on the same screen, and buys distinct colours for breakdown
+  categories that are labelled directly anyway.
 - **44px targets everywhere.** Rejected: it contradicts the dense table the product is built around,
   and it exceeds the AA criterion the client actually targets.
+
+## Revision history
+
+- **2026-08-08 — original.** Three enforced layers, a sequential stage scale beside a categorical
+  outcome one, three tokens per stage and outcome, two border tokens, the dashboard density scale
+  and the coarse-pointer resolution of the target-size conflict. Dark mode followed
+  `prefers-color-scheme`; the five chart slots were declared provisional.
+- **2026-08-21 — judged against real screens, which is what the checkpoint after the board was
+  for.** Three changes, and the first two only became visible once there was something to look at.
+  **Dark is now the default and wins over the system setting**, with light kept behind `.light` and
+  selected by a cookie the root layout reads — and the placement of that read is the finding rather
+  than a detail, because setting the class in the browser lands after first paint and every
+  `transition-colors` in the tree then animates out of the wrong palette, which the accessibility
+  sweep caught as failing contrast at a different intermediate colour each run. The original's claim
+  that a toggle needs a blocking inline script was wrong for this application specifically: the
+  nonce-based policy already makes every page render per request. **The selected tint and the hover
+  tint stopped sharing a value** — `--secondary` and `--muted` were the same ramp step, so hovering
+  an unselected filter was indistinguishable from selecting it, and the toggles on the applications
+  list were where it showed. **The chart slots are settled** ahead of the analytics work that
+  inherits them: five generic slots turned out to be the stage ramp and three outcome hues under
+  other names, so domain marks read the domain tokens and two slots remain for a series the domain
+  does not colour and for the marks that stand for an absence. The palette, the typeface, the
+  density scale and the motion timings were all confirmed unchanged at the same sitting.
